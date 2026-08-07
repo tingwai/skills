@@ -1,0 +1,13 @@
+{
+  "name": "tingwai-skills",
+  "version": "1.0.0",
+  "description": "A collection of small, focused agent skills by Ting Wai.",
+  "author": {
+    "name": "Ting Wai",
+    "url": "https://github.com/tingwai"
+  },
+  "repository": "https://github.com/tingwai/skills",
+  "skills": [
+    "./skills/html-that"
+  ]
+}

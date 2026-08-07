@@ -1,0 +1,16 @@
+{
+  "name": "tingwai",
+  "owner": {
+    "name": "Ting Wai",
+    "url": "https://github.com/tingwai"
+  },
+  "description": "Ting Wai's Claude Code skills.",
+  "plugins": [
+    {
+      "name": "tingwai-skills",
+      "source": "./",
+      "description": "A collection of small, focused agent skills by Ting Wai.",
+      "version": "1.0.0"
+    }
+  ]
+}

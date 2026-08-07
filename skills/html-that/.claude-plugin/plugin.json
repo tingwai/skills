@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Render Markdown in a self-contained HTML reading page and open it in the default browser.",
   "author": {
-    "name": "Ting Wai",
+    "name": "Ting-Wai",
     "url": "https://github.com/tingwai"
   },
   "repository": "https://github.com/tingwai/skills",

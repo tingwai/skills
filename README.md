@@ -1,4 +1,4 @@
-# Ting Wai's Skills
+# Ting-Wai's Skills
 
 Small, focused skills for coding agents.
 

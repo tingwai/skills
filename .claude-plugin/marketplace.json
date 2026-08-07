@@ -1,10 +1,10 @@
 {
   "name": "tingwai",
   "owner": {
-    "name": "Ting Wai",
+    "name": "Ting-Wai",
     "url": "https://github.com/tingwai"
   },
-  "description": "Ting Wai's Claude Code skills.",
+  "description": "Ting-Wai's Claude Code skills.",
   "plugins": [
     {
       "name": "html-that",

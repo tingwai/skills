@@ -6,7 +6,7 @@ Small, focused skills for coding agents.
 
 ```text
 /plugin marketplace add tingwai/skills
-/plugin install tingwai-skills@tingwai
+/plugin install skills@tingwai
 ```
 
 ## Install in Codex and other agents

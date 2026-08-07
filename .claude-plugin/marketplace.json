@@ -7,7 +7,7 @@
   "description": "Ting Wai's Claude Code skills.",
   "plugins": [
     {
-      "name": "tingwai-skills",
+      "name": "skills",
       "source": "./",
       "description": "A collection of small, focused agent skills by Ting Wai.",
       "version": "1.0.0"

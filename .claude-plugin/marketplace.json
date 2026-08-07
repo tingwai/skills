@@ -7,9 +7,9 @@
   "description": "Ting Wai's Claude Code skills.",
   "plugins": [
     {
-      "name": "skills",
-      "source": "./",
-      "description": "A collection of small, focused agent skills by Ting Wai.",
+      "name": "html-that",
+      "source": "./skills/html-that",
+      "description": "Render Markdown in a self-contained HTML reading page and open it in the default browser.",
       "version": "1.0.0"
     }
   ]

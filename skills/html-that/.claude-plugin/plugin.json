@@ -1,13 +1,13 @@
 {
-  "name": "skills",
+  "name": "html-that",
   "version": "1.0.0",
-  "description": "A collection of small, focused agent skills by Ting Wai.",
+  "description": "Render Markdown in a self-contained HTML reading page and open it in the default browser.",
   "author": {
     "name": "Ting Wai",
     "url": "https://github.com/tingwai"
   },
   "repository": "https://github.com/tingwai/skills",
   "skills": [
-    "./skills/html-that"
+    "./"
   ]
 }

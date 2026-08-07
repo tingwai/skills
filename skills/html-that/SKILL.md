@@ -1,6 +1,6 @@
 ---
 name: html-that
-description: Render assistant content as Markdown in a self-contained temporary HTML reading page and open it in the default browser. Use when the user says `/html`, `/html that`, gives `/html` a contextual scope such as `only the table`, supplies particular content to render, asks to view the last assistant answer in a minimal Firefox Reader-style page, or explicitly invokes `$html-that`.
+description: Save last agent message as minimal Markdown-style HTML page and open it in the default browser. Use when the user says `/html`, `/html that`. Or give `/html` a specifics such as `only the table`, to pass content to render. Or explicitly call with `$html-that`.
 ---
 
 # HTML That

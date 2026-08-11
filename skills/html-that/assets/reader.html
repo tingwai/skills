@@ -13,7 +13,6 @@
       --link: #145f82;
       --rule: #d8d3c9;
       --code-background: #ebe7de;
-      --quote: #777168;
       font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       color: var(--foreground);
       background: var(--background);
@@ -29,7 +28,6 @@
         --link: #8bc7e3;
         --rule: #45433e;
         --code-background: #2a2926;
-        --quote: #aaa59b;
       }
     }
 
@@ -55,7 +53,6 @@
 
     h1, h2, h3, h4, h5, h6 {
       margin: 2.1em 0 0.65em;
-      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.2;
       letter-spacing: -0.018em;
     }
@@ -73,7 +70,7 @@
       margin-left: 0;
       padding-left: 1.15rem;
       border-left: 0.2rem solid var(--rule);
-      color: var(--quote);
+      color: var(--muted);
     }
 
     code, pre {
@@ -101,7 +98,6 @@
     pre.mermaid {
       display: flex;
       justify-content: center;
-      overflow-x: auto;
       padding: 1.25rem;
       background: transparent;
     }
@@ -132,10 +128,7 @@
       vertical-align: top;
     }
 
-    th {
-      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 650;
-    }
+    th { font-weight: 650; }
 
     .question {
       margin: 0 0 2.6rem;
@@ -153,8 +146,7 @@
 
     .repository code { font-size: 0.95em; }
 
-    .question p:last-child { margin-bottom: 0; }
-    .answer > :last-child { margin-bottom: 0; }
+    .question p:last-child, .answer > :last-child { margin-bottom: 0; }
 
     .section-label {
       margin: 0 0 0.45rem;

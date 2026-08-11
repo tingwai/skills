@@ -1,4 +1,4 @@
 interface:
   display_name: "HTML That"
-  short_description: "Open the last answer in a clean HTML reader"
-  default_prompt: "Use $html-that to open the previous answer, or a selected part of it, as a clean reading page."
+  short_description: "Open answers and Mermaid diagrams as HTML"
+  default_prompt: "Use $html-that to open the previous answer, including any Mermaid diagram, as a clean local HTML page."

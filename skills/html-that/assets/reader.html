@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Question and answer</title>
+  <title><!-- HTML_THAT_TITLE --></title>
   <style>
     :root {
       --background: #f7f5f0;
@@ -97,6 +97,23 @@
     }
 
     pre code { padding: 0; background: transparent; }
+
+    pre.mermaid {
+      display: flex;
+      justify-content: center;
+      overflow-x: auto;
+      padding: 1.25rem;
+      background: transparent;
+    }
+
+    pre.mermaid[data-processed="true"] {
+      border: 0;
+    }
+
+    pre.mermaid svg {
+      max-width: 100%;
+      height: auto;
+    }
     hr { margin: 2.2rem 0; border: 0; border-top: 1px solid var(--rule); }
 
     table {
@@ -162,5 +179,14 @@
       <!-- HTML_THAT_CONTENT -->
     </article>
   </main>
+  <script src="./mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: "strict",
+      htmlLabels: false,
+      theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default"
+    });
+  </script>
 </body>
 </html>

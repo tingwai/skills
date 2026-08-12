@@ -47,6 +47,8 @@ Render the selected Markdown as semantic HTML without changing its wording, orde
 
 A fenced block whose info string is exactly `mermaid` (case-insensitive, surrounding whitespace ignored) becomes `<pre class="mermaid">[escaped source]</pre>`. Keep every other fence as escaped code and never infer Mermaid from an unlabelled block.
 
+Keep Mermaid syntax compatible with the bundled runtime. Prefer canonical, unambiguous forms: use `A -->|label| B` for a labelled flowchart edge and quote node labels that contain spaces or punctuation, for example `B["Continue the agent loop"]`. When selected Mermaid is invalid, repair only its syntax while preserving the diagram's meaning.
+
 ### Links
 
 - Give `http:` and `https:` links `target="_blank" rel="noopener noreferrer"`.
@@ -61,5 +63,7 @@ Do not add scripts beyond the bundled Mermaid runtime, event handlers, forms, if
 ## Verify and open
 
 Verify that `index.html` and `mermaid.min.js` exist and are nonempty, both markers are gone, and the decoded title is `[Skill] ` plus the cleaned question. For Mermaid content, verify `class="mermaid"` is present and `language-mermaid` is absent.
+
+Presence checks do not prove that Mermaid parsed successfully. Load the completed page with the bundled runtime before opening it for the user. Wait for rendering, then verify that every `pre.mermaid` contains an SVG and that none is an error diagram or contains a parse message such as `Syntax error in text`. Treat a Mermaid console or page error as a failure. Repair invalid Mermaid without changing its meaning and repeat this validation until every diagram renders.
 
 Open the absolute `index.html` path with `open` on macOS, `xdg-open` on Linux, or the platform equivalent. Report the path concisely. If opening fails, retain the page and report its path and the error.

@@ -11,6 +11,12 @@
       "source": "./skills/html-that",
       "description": "Render Markdown in a self-contained HTML reading page and open it in the default browser.",
       "version": "1.0.0"
+    },
+    {
+      "name": "open-codex-stream",
+      "source": "./skills/open-codex-stream",
+      "description": "Open the live Codex transcript viewer in a right-hand Herdr pane.",
+      "version": "1.0.0"
     }
   ]
 }

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Codex session tape</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="identity">
+        <span class="live-mark" aria-hidden="true"></span>
+        <div>
+          <p class="eyebrow">Live transcript</p>
+          <h1>Session tape</h1>
+        </div>
+      </div>
+      <div class="session-state" aria-live="polite">
+        <span id="connection" class="connection is-connecting">Connecting</span>
+        <span id="session-name" class="session-name">Waiting for transcript</span>
+      </div>
+    </header>
+
+    <nav class="control-strip" aria-label="Stream controls">
+      <label class="search-control">
+        <span>Find</span>
+        <input id="search" type="search" placeholder="command, output, path…" autocomplete="off">
+        <kbd>/</kbd>
+      </label>
+      <div id="filters" class="filters" aria-label="Event filters"></div>
+      <div class="stream-actions">
+        <button id="pause" class="quiet-button" type="button" aria-pressed="false" title="Pause automatic live follow">Pause follow</button>
+        <button id="jump-live" class="live-button" type="button" title="Jump to newest and resume follow (G)">Jump to live</button>
+      </div>
+    </nav>
+
+    <main>
+      <div id="empty" class="empty-state">
+        <div class="empty-pulse" aria-hidden="true"></div>
+        <h2>Listening for the next event</h2>
+        <p>The tape fills as Codex writes to this session’s transcript.</p>
+      </div>
+      <ol id="tape" class="tape" aria-label="Codex transcript events"></ol>
+    </main>
+
+    <aside id="notice" class="notice" role="status" hidden></aside>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

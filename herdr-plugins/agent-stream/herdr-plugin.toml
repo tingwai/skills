@@ -1,0 +1,25 @@
+id = "tingwai.agent-stream"
+name = "Agent Stream"
+version = "0.1.0"
+min_herdr_version = "0.8.0"
+description = "Continuously displays Codex transcript events beside the source pane"
+platforms = ["macos", "linux"]
+
+[[startup]]
+command = ["node", "startup.mjs"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["node", "agent-event.mjs"]
+
+[[panes]]
+id = "stream"
+title = "Codex stream"
+placement = "split"
+command = ["node", "tui.mjs"]
+
+[[panes]]
+id = "stream-plain"
+title = "Codex stream (plain)"
+placement = "split"
+command = ["node", "viewer.mjs"]

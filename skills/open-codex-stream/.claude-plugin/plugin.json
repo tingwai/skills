@@ -1,0 +1,13 @@
+{
+  "name": "open-codex-stream",
+  "version": "1.0.0",
+  "description": "Open the live Codex transcript viewer in a right-hand Herdr pane.",
+  "author": {
+    "name": "Ting-Wai",
+    "url": "https://github.com/tingwai"
+  },
+  "repository": "https://github.com/tingwai/skills",
+  "skills": [
+    "./"
+  ]
+}

@@ -1,8 +1,11 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const transcriptPath = process.env.CODEX_TRANSCRIPT_PATH;
+let transcriptPath = process.env.CODEX_TRANSCRIPT_PATH ?? "";
+let sessionId = process.env.CODEX_SESSION_ID ?? "";
+const sourcePaneId = process.env.CODEX_SOURCE_PANE_ID;
 const statePath = process.env.AGENT_STREAM_STATE_PATH;
 const historyLimit = positiveInteger(process.env.AGENT_STREAM_TUI_HISTORY, 250);
 const eventLimit = positiveInteger(process.env.AGENT_STREAM_TUI_MAX_EVENTS, 500);
@@ -10,18 +13,117 @@ const eventLineLimit = positiveInteger(process.env.AGENT_STREAM_TUI_MAX_EVENT_LI
 const tailByteLimit = positiveInteger(process.env.AGENT_STREAM_TUI_TAIL_BYTES, 64 * 1024 * 1024);
 const maxJsonStringLength = positiveInteger(process.env.AGENT_STREAM_MAX_JSON_STRING_LENGTH, 500);
 const maxJsonCollectionItems = positiveInteger(process.env.AGENT_STREAM_MAX_JSON_COLLECTION_ITEMS, 100);
+const CSI = "\u001b[";
+const RESET = `${CSI}0m`;
 
-if (!transcriptPath) {
-  process.stderr.write("CODEX_TRANSCRIPT_PATH is required.\n");
-  process.exit(1);
-}
 if (!process.stdin.isTTY || !process.stdout.isTTY) {
   process.stderr.write("The interactive viewer requires a TTY. Use viewer.mjs for plain output.\n");
   process.exit(1);
 }
 
-const CSI = "\u001b[";
-const RESET = `${CSI}0m`;
+function findTranscript(directory, targetSessionId) {
+  let entries;
+  try {
+    entries = fs.readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  for (const entry of entries) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      const match = findTranscript(entryPath, targetSessionId);
+      if (match) return match;
+    } else if (entry.name.endsWith(`${targetSessionId}.jsonl`)) {
+      return entryPath;
+    }
+  }
+  return null;
+}
+
+function persistViewerState(currentTranscriptPath, currentSessionId) {
+  if (!statePath) return;
+  try {
+    fs.writeFileSync(statePath, `${JSON.stringify({
+      transcriptPath: currentTranscriptPath,
+      sessionId: currentSessionId,
+      pid: process.pid,
+      openedAt: Date.now(),
+    })}\n`);
+  } catch {
+    // The viewer can continue if deduplication state is unavailable.
+  }
+}
+
+function removeOwnedState() {
+  if (!statePath) return;
+  try {
+    const viewerState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    if (viewerState.pid === process.pid) fs.unlinkSync(statePath);
+  } catch {
+    // A newer viewer may own the state file.
+  }
+}
+
+function renderWaitingForSession() {
+  const width = Math.max(20, (process.stdout.columns ?? 80) - 1);
+  const message = " Nothing to display yet.".slice(0, width).padEnd(width);
+  process.stdout.write(
+    `${CSI}?1049h${CSI}?25l${CSI}H${CSI}2J${CSI}2;37m${message}${RESET}`,
+  );
+}
+
+async function waitForTranscript() {
+  if (!sourcePaneId) return null;
+  const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
+  const sessionsDirectory = path.join(os.homedir(), ".codex", "sessions");
+  let consecutiveFailures = 0;
+
+  renderWaitingForSession();
+  for (;;) {
+    const paneResult = spawnSync(herdr, ["pane", "get", sourcePaneId], {
+      encoding: "utf8",
+      env: process.env,
+      timeout: 3_000,
+    });
+
+    if (paneResult.status === 0) {
+      consecutiveFailures = 0;
+      let pane;
+      try {
+        pane = JSON.parse(paneResult.stdout)?.result?.pane;
+      } catch {
+        pane = null;
+      }
+      if (typeof pane?.agent === "string" && pane.agent !== "codex") return null;
+      const agentSession = pane?.agent_session;
+      if (agentSession?.agent === "codex" && agentSession.kind === "id") {
+        const resolvedTranscriptPath = findTranscript(sessionsDirectory, agentSession.value);
+        if (resolvedTranscriptPath) {
+          return { sessionId: agentSession.value, transcriptPath: resolvedTranscriptPath };
+        }
+      }
+    } else {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= 20) return null;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
+if (!transcriptPath) {
+  persistViewerState("", sessionId);
+  const resolvedSession = await waitForTranscript();
+  if (!resolvedSession) {
+    removeOwnedState();
+    process.stdout.write(`${CSI}?25h${CSI}?1049l`);
+    process.exit(0);
+  }
+  transcriptPath = resolvedSession.transcriptPath;
+  sessionId = resolvedSession.sessionId;
+}
+
 const kindColors = {
   user: "94", agent: "92", command: "93", file: "95", extension: "96",
   reasoning: "95", error: "91", other: "97",
@@ -516,7 +618,7 @@ function render() {
   state.renderedDocument = buildDocument(width);
   state.scrollOffset = Math.max(0, Math.min(Math.max(0, state.renderedDocument.length - viewportHeight), state.scrollOffset));
   state.visibleRows = new Map();
-  const sessionId = process.env.CODEX_SESSION_ID || path.basename(transcriptPath);
+  const displayedSessionId = sessionId || path.basename(transcriptPath);
   const help = clip(" click selects · wheel scrolls chat · Shift+wheel message · j/k · G live", width).padEnd(width);
   const output = [`${CSI}H${CSI}2J${CSI}2;37m${help}${RESET}`];
   for (let offset = 0; offset < viewportHeight; offset += 1) {
@@ -530,7 +632,7 @@ function render() {
     const statusLabel = state.following ? "LIVE" : "PAUSED";
     const stateSegment = state.following ? ` ${statusLabel} ` : statusLabel;
     const prefix = ` ${state.selectedIndex + 1}/${state.events.length} · `;
-    const status = clip(`${prefix}${stateSegment} · session ${sessionId} `, width).padEnd(width);
+    const status = clip(`${prefix}${stateSegment} · session ${displayedSessionId} `, width).padEnd(width);
     const beforeState = status.slice(0, prefix.length);
     const renderedState = status.slice(prefix.length, prefix.length + stateSegment.length);
     const afterState = status.slice(prefix.length + stateSegment.length);
@@ -638,12 +740,7 @@ function readNewRecords() {
 }
 
 function writeState() {
-  if (!statePath) return;
-  try {
-    fs.writeFileSync(statePath, `${JSON.stringify({ transcriptPath, sessionId: process.env.CODEX_SESSION_ID ?? "", pid: process.pid, openedAt: Date.now() })}\n`);
-  } catch {
-    // The viewer can continue if deduplication state is unavailable.
-  }
+  persistViewerState(transcriptPath, sessionId);
 }
 
 function cleanUp() {
@@ -653,14 +750,7 @@ function cleanUp() {
   process.stdin.off("data", handleInput);
   if (process.stdin.isTTY) process.stdin.setRawMode(false);
   process.stdout.write(`${CSI}?1000l${CSI}?1006l${CSI}?25h${CSI}?1049l`);
-  if (statePath) {
-    try {
-      const viewerState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-      if (viewerState.pid === process.pid) fs.unlinkSync(statePath);
-    } catch {
-      // A newer viewer may own the state file.
-    }
-  }
+  removeOwnedState();
 }
 
 function cleanUpAndExit() {

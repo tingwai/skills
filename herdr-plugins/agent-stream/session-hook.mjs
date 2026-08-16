@@ -35,10 +35,10 @@ function readState(statePath) {
 
 const hookInput = JSON.parse(await readStdin());
 const sourcePaneId = process.env.HERDR_PANE_ID;
-const transcriptPath = hookInput.transcript_path;
+const transcriptPath = hookInput.transcript_path ?? "";
 const sessionId = hookInput.session_id ?? "";
 
-if (process.env.HERDR_ENV !== "1" || !sourcePaneId || !transcriptPath) process.exit(0);
+if (process.env.HERDR_ENV !== "1" || !sourcePaneId) process.exit(0);
 
 const stateDirectory = path.join(os.tmpdir(), "herdr-agent-stream");
 const safePaneId = sourcePaneId.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -67,19 +67,27 @@ fs.writeFileSync(
 );
 
 const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
-const result = spawnSync(herdr, [
+const transcriptEnvironment = transcriptPath
+  ? ["--env", `CODEX_TRANSCRIPT_PATH=${transcriptPath}`]
+  : [];
+const openArguments = [
   "plugin", "pane", "open",
   "--plugin", "tingwai.agent-stream",
   "--entrypoint", "stream",
   "--placement", "split",
   "--target-pane", sourcePaneId,
   "--direction", "right",
-  "--env", `CODEX_TRANSCRIPT_PATH=${transcriptPath}`,
   "--env", `CODEX_SOURCE_PANE_ID=${sourcePaneId}`,
   "--env", `CODEX_SESSION_ID=${sessionId}`,
   "--env", `AGENT_STREAM_STATE_PATH=${statePath}`,
+  ...transcriptEnvironment,
   "--no-focus",
-], { encoding: "utf8", env: process.env, timeout: 7_000 });
+];
+const result = spawnSync(herdr, openArguments, {
+  encoding: "utf8",
+  env: process.env,
+  timeout: 7_000,
+});
 
 if (result.status !== 0) {
   try {

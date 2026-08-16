@@ -23,24 +23,6 @@ function findTranscript(directory, sessionId) {
   return null;
 }
 
-function viewerAlreadyOpening(paneId, sessionId) {
-  const safePaneId = paneId.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const statePath = path.join(os.tmpdir(), "herdr-agent-stream", `${safePaneId}.json`);
-  try {
-    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    if (state.sessionId !== sessionId) return false;
-    if (!state.pid) return Date.now() - state.openedAt < 15_000;
-    try {
-      process.kill(state.pid, 0);
-      return true;
-    } catch (error) {
-      return error?.code === "EPERM";
-    }
-  } catch {
-    return false;
-  }
-}
-
 const paneId = process.env.HERDR_PANE_ID;
 if (!paneId) process.exit(0);
 
@@ -50,7 +32,6 @@ const paneResult = spawnSync(herdr, ["pane", "get", paneId], {
   env: process.env,
   timeout: 3_000,
 });
-
 if (paneResult.status !== 0) process.exit(0);
 
 let pane;
@@ -61,14 +42,13 @@ try {
 }
 
 const agentSession = pane?.agent_session;
-if (agentSession?.agent !== "codex" || agentSession.kind !== "id") process.exit(0);
-if (viewerAlreadyOpening(paneId, agentSession.value)) process.exit(0);
+const isCodex = pane?.agent === "codex" || agentSession?.agent === "codex";
+if (!isCodex) process.exit(0);
 
-const transcriptPath = findTranscript(
-  path.join(os.homedir(), ".codex", "sessions"),
-  agentSession.value,
-);
-if (!transcriptPath) process.exit(0);
+const sessionId = agentSession?.kind === "id" ? agentSession.value : "";
+const transcriptPath = sessionId
+  ? findTranscript(path.join(os.homedir(), ".codex", "sessions"), sessionId)
+  : null;
 
 const hookResult = spawnSync(
   process.execPath,
@@ -78,7 +58,7 @@ const hookResult = spawnSync(
     env: process.env,
     input: JSON.stringify({
       cwd: pane.cwd,
-      session_id: agentSession.value,
+      session_id: sessionId,
       transcript_path: transcriptPath,
     }),
     timeout: 8_000,

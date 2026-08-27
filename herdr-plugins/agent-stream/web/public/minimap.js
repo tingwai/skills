@@ -19,12 +19,32 @@ export function sampleMinimap(events, maximumBins = 180) {
     const startIndex = Math.floor(binIndex * events.length / binCount);
     const endIndex = Math.max(startIndex, Math.floor((binIndex + 1) * events.length / binCount) - 1);
     const counts = new Map();
+    const lengths = [];
     for (let index = startIndex; index <= endIndex; index += 1) {
       const kind = events[index].dataset?.kind ?? events[index].kind ?? "status";
       counts.set(kind, (counts.get(kind) ?? 0) + 1);
+      const length = Number(events[index].dataset?.contentLength ?? events[index].contentLength ?? 0);
+      lengths.push(Number.isFinite(length) && length > 0 ? length : 0);
     }
     const kind = [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? "status";
-    return { startIndex, endIndex, count: endIndex - startIndex + 1, kind };
+    lengths.sort((left, right) => left - right);
+    const middle = Math.floor(lengths.length / 2);
+    const aggregateLength = lengths.length % 2 === 0
+      ? (lengths[middle - 1] + lengths[middle]) / 2
+      : lengths[middle];
+    return { startIndex, endIndex, count: endIndex - startIndex + 1, kind, aggregateLength };
+  });
+}
+
+export function minimapBarWidths(bins, railWidth, minimumWidth = 2) {
+  const safeRailWidth = Math.max(1, railWidth);
+  const safeMinimum = Math.min(safeRailWidth, Math.max(1, minimumWidth));
+  const maximumLength = Math.max(0, ...bins.map((bin) => bin.aggregateLength ?? 0));
+  const denominator = Math.log1p(maximumLength);
+  return bins.map((bin) => {
+    const length = Math.max(0, bin.aggregateLength ?? 0);
+    if (denominator === 0 || length === 0) return safeMinimum;
+    return safeMinimum + (safeRailWidth - safeMinimum) * Math.log1p(length) / denominator;
   });
 }
 
@@ -84,11 +104,13 @@ export function installMinimap({
       const context = canvasContext(canvas, width, height, windowValue.devicePixelRatio);
       const palette = colors();
       const bins = sampleMinimap(events);
+      const barWidths = minimapBarWidths(bins, width - 2);
       const binHeight = height / Math.max(1, bins.length);
       bins.forEach((bin, index) => {
         context.fillStyle = palette[bin.kind] ?? palette.other;
         context.globalAlpha = .78;
-        context.fillRect(1, index * binHeight, width - 2, Math.max(1, binHeight - .5));
+        const barWidth = barWidths[index];
+        context.fillRect(width - 1 - barWidth, index * binHeight, barWidth, Math.max(1, binHeight - .5));
       });
       context.globalAlpha = 1;
     }

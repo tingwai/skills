@@ -21,7 +21,11 @@ events until the reader scrolls upward, clicks an event, or pauses follow. The
 
 The IDE Activity Rail layout keeps the readable stream beside a narrow sampled
 whole-session minimap. Clicking or dragging the minimap selects the matching
-transcript event; selecting the newest event resumes live follow.
+transcript event; selecting the newest event resumes live follow. Each mark's
+horizontal width represents its event body's text length using logarithmic
+normalization, so extreme output does not flatten ordinary messages. Long
+sessions use the median text length within each bounded aggregate bin rather
+than implying an exact per-event value.
 
 If Codex `/resume` changes the active conversation in the same source surface,
 the server detects Cmux's new active session, clears the old browser tape, loads

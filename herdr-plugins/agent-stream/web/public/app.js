@@ -532,6 +532,7 @@ function appendRecord(record) {
   const selectedIndex = visibleEvents().indexOf(selectedEvent);
   const item = renderRecord(record);
   if (!item) return;
+  item.dataset.contentLength = String(item.querySelector(".event-body")?.textContent.trim().length ?? 0);
   emptyState.hidden = true;
   tape.append(item);
   const count = (filterCounts.get(item.dataset.kind) ?? 0) + 1;

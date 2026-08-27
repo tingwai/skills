@@ -7,6 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   minimapIndexForRatio,
+  minimapBarWidths,
   minimapViewport,
   sampleMinimap,
 } from "../../../herdr-plugins/agent-stream/web/public/minimap.js";
@@ -261,9 +262,11 @@ test("IDE Activity Rail is the sole compact skin in narrow panes", () => {
 test("minimap sampling stays bounded and maps click or drag to transcript selection", () => {
   const events = Array.from({ length: 10_000 }, (_, index) => ({
     kind: ["user", "agent", "command", "status"][index % 4],
+    contentLength: index % 97,
   }));
   const bins = sampleMinimap(events, 180);
   assert.equal(bins.length, 180, "Long sessions must not create one overview node per event or pixel");
+  assert.deepEqual(sampleMinimap(events, 180), bins, "Bounded aggregation must be deterministic");
   assert.equal(bins[0].startIndex, 0);
   assert.equal(bins.at(-1).endIndex, 9_999);
   assert.equal(minimapIndexForRatio(events.length, 0), 0);
@@ -274,6 +277,40 @@ test("minimap sampling stays bounded and maps click or drag to transcript select
   assert.equal(newestIndex, 9_999);
   assert.equal(selectionForNavigation(events.length, newestIndex - 1, 1).following, true);
   assert.equal(selectionForNavigation(events.length, newestIndex, -1).following, false);
+});
+
+test("minimap mark width honestly scales content length in a narrow rail", () => {
+  const bins = sampleMinimap([
+    { kind: "status", contentLength: 0 },
+    { kind: "user", contentLength: 12 },
+    { kind: "agent", contentLength: 120 },
+    { kind: "agent", contentLength: 120 },
+    { kind: "command", contentLength: 1_200 },
+    { kind: "command", contentLength: 1_000_000_000 },
+  ]);
+  const widths = minimapBarWidths(bins, 12, 2);
+  assert.equal(widths[0], 2, "Empty and status-only events keep a visible minimum mark");
+  assert.ok(widths[1] < widths[2]);
+  assert.equal(widths[2], widths[3]);
+  assert.ok(widths[3] < widths[4]);
+  assert.ok(widths[4] < widths[5]);
+  assert.equal(widths[5], 12);
+  assert.ok(widths[2] > 3, "Log normalization keeps ordinary messages legible beside an outlier");
+  assert.ok(widths.every((width) => width >= 2 && width <= 12));
+  assert.deepEqual(
+    minimapBarWidths(sampleMinimap([{ kind: "command", contentLength: 0 }]), 12, 2),
+    [2],
+    "A tool event without meaningful body text remains visible",
+  );
+
+  const aggregate = sampleMinimap([
+    { kind: "agent", contentLength: 10 },
+    { kind: "agent", contentLength: 100 },
+    { kind: "agent", contentLength: 10_000 },
+  ], 1);
+  assert.equal(aggregate[0].count, 3);
+  assert.equal(aggregate[0].aggregateLength, 100, "Aggregated bins use the robust median length");
+  assert.equal(minimapIndexForRatio(3, 1), 2, "Bar sizing does not affect pointer hit testing");
 });
 
 test("empty server attaches only to later authoritative metadata for its source surface", async () => {

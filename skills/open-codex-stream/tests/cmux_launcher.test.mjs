@@ -4,8 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  selectionAfterAppend,
+  selectionForNavigation,
+  selectionForSessionReset,
+} from "../../../herdr-plugins/agent-stream/web/public/selection-state.js";
 
 const scriptsDirectory = path.resolve(import.meta.dirname, "../scripts");
+const dispatcher = path.join(scriptsDirectory, "open_stream.mjs");
 const lifecycleModulePath = path.resolve(
   scriptsDirectory,
   "../../../herdr-plugins/agent-stream/viewer-lifecycle.mjs",
@@ -28,6 +34,107 @@ function waitForFile(filePath, timeoutMs = 2_000) {
   }
   return false;
 }
+
+test("manual dispatcher defaults to browser in Cmux and preserves explicit terminal fallback", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-stream-dispatch-test-"));
+  const browserLauncher = path.join(directory, "browser.mjs");
+  const terminalLauncher = path.join(directory, "terminal.mjs");
+  fs.writeFileSync(browserLauncher,
+    `process.stdout.write(JSON.stringify({ mode: "browser", args: process.argv.slice(2) }) + "\\n");\n`);
+  fs.writeFileSync(terminalLauncher,
+    `process.stdout.write(JSON.stringify({ mode: "terminal", args: process.argv.slice(2) }) + "\\n");\n`);
+  const environment = {
+    ...process.env,
+    HERDR_ENV: "",
+    CMUX_SURFACE_ID: "source-dispatch",
+    CMUX_WORKSPACE_ID: "workspace-dispatch",
+    CODEX_STREAM_BROWSER_LAUNCHER: browserLauncher,
+    CODEX_STREAM_TERMINAL_LAUNCHER: terminalLauncher,
+  };
+
+  const browser = spawnSync(process.execPath, [dispatcher, "--browser"], {
+    encoding: "utf8",
+    env: environment,
+  });
+  assert.equal(browser.status, 0, browser.stderr);
+  assert.deepEqual(JSON.parse(browser.stdout), { mode: "browser", args: [] });
+
+  const explicitTerminal = spawnSync(process.execPath, [dispatcher, "--terminal"], {
+    encoding: "utf8",
+    env: environment,
+  });
+  assert.equal(explicitTerminal.status, 0, explicitTerminal.stderr);
+  assert.deepEqual(JSON.parse(explicitTerminal.stdout), { mode: "terminal", args: [] });
+
+  const unqualified = spawnSync(process.execPath, [dispatcher], {
+    encoding: "utf8",
+    env: environment,
+  });
+  assert.equal(unqualified.status, 0, unqualified.stderr);
+  assert.deepEqual(JSON.parse(unqualified.stdout), { mode: "browser", args: [] });
+
+  const conflicting = spawnSync(process.execPath, [dispatcher, "--browser", "--terminal"], {
+    encoding: "utf8",
+    env: environment,
+  });
+  assert.equal(conflicting.status, 1);
+  assert.match(conflicting.stderr, /Choose either --browser or --terminal/u);
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test("manual dispatcher defaults to terminal in Herdr", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codex-stream-herdr-default-test-"));
+  const fakeHerdr = path.join(directory, "herdr");
+  executable(fakeHerdr, `#!/bin/sh
+case "$*" in
+  "pane current --current") printf '%s\n' '{"result":{"pane":{"pane_id":"source-herdr","agent_session":{"agent":"codex","kind":"id"}}}}' ;;
+  "plugin list --json") printf '%s\n' '{"result":{"plugins":[]}}' ;;
+  *) exit 1 ;;
+esac
+`);
+  const result = spawnSync(process.execPath, [dispatcher], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HERDR_ENV: "1",
+      CMUX_SURFACE_ID: "",
+      HERDR_BIN_PATH: fakeHerdr,
+    },
+  });
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(JSON.parse(result.stdout).status, "plugin_missing");
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test("manual browser mode reports the Herdr runtime boundary", () => {
+  const result = spawnSync(process.execPath, [dispatcher, "--browser"], {
+    encoding: "utf8",
+    env: { ...process.env, HERDR_ENV: "1", CMUX_SURFACE_ID: "" },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /available only inside Cmux; use --terminal in Herdr/u);
+});
+
+test("terminal navigation treats the newest message as live-follow state", () => {
+  const older = selectionForNavigation(3, 2, -1);
+  assert.deepEqual(older, { selectedIndex: 1, following: false });
+  assert.deepEqual(selectionAfterAppend(4, older.selectedIndex, older.following), {
+    selectedIndex: 1,
+    following: false,
+  });
+
+  const newest = selectionForNavigation(3, older.selectedIndex, 1);
+  assert.deepEqual(newest, { selectedIndex: 2, following: true });
+  assert.deepEqual(selectionAfterAppend(4, newest.selectedIndex, newest.following), {
+    selectedIndex: 3,
+    following: true,
+  });
+
+  assert.deepEqual(selectionForNavigation(0, -1, 1), { selectedIndex: -1, following: true });
+  assert.deepEqual(selectionForNavigation(1, 0, -1), { selectedIndex: 0, following: true });
+  assert.deepEqual(selectionForNavigation(1, 0, 1), { selectedIndex: 0, following: true });
+  assert.deepEqual(selectionForSessionReset(), { selectedIndex: -1, following: true });
+});
 
 test("Cmux launcher opens right without focus and restores the same surface", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cmux-stream-launcher-test-"));
@@ -67,11 +174,11 @@ esac
     AGENT_STREAM_STATE_DIRECTORY: directory,
   };
   const launcher = path.join(scriptsDirectory, "open_stream.mjs");
-  const first = spawnSync(process.execPath, [launcher], { encoding: "utf8", env });
+  const first = spawnSync(process.execPath, [launcher, "--terminal"], { encoding: "utf8", env });
   assert.equal(first.status, 0, first.stderr);
   assert.equal(JSON.parse(first.stdout).status, "opened");
 
-  const second = spawnSync(process.execPath, [launcher], { encoding: "utf8", env });
+  const second = spawnSync(process.execPath, [launcher, "--terminal"], { encoding: "utf8", env });
   assert.equal(second.status, 0, second.stderr);
   assert.equal(JSON.parse(second.stdout).status, "already_open");
 
@@ -86,7 +193,7 @@ esac
     }
   }
 
-  const third = spawnSync(process.execPath, [launcher], { encoding: "utf8", env });
+  const third = spawnSync(process.execPath, [launcher, "--terminal"], { encoding: "utf8", env });
   assert.equal(third.status, 0, third.stderr);
   assert.equal(JSON.parse(third.stdout).status, "restored");
 

@@ -1,6 +1,6 @@
 {
   "name": "open-codex-stream",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Open the live Codex transcript viewer in a right-hand Cmux or Herdr pane.",
   "author": {
     "name": "Ting-Wai",

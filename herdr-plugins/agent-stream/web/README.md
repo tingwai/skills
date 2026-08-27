@@ -16,6 +16,7 @@ The UI includes:
 - command status, exit-code, and duration badges
 - shortened home paths and shell-style command rendering
 - searchable, filterable events with follow/pause controls
+- a narrow, bounded whole-session minimap for click/drag navigation
 - click selection followed by `j`/`k` navigation between visible events
 - `Shift`+wheel navigation with a Mac trackpad-friendly time throttle, while
   ordinary wheel scrolling remains native
@@ -24,6 +25,7 @@ The UI includes:
 - semantic shell highlighting for commands, subcommands, flags, paths,
   strings, variables, operators, and operands
 - colored file diffs and semantic JSON values
+- safe Markdown for assistant commentary and final answers; raw HTML and unsafe links remain inert
 - collapsed JSON strings over 500 characters and collections over 100 items
 - recursive `herdr pane read` output suppression
 
@@ -40,8 +42,11 @@ node herdr-plugins/agent-stream/web/server.mjs \
 ```
 
 Then open <http://127.0.0.1:4319/>. The listener binds only to `127.0.0.1`,
-serves only its three bundled assets, applies a restrictive Content Security
+serves only its bundled assets, applies a restrictive Content Security
 Policy, and never exposes the transcript as a downloadable file.
+
+For the source-surface-scoped Cmux launcher and its immediate empty-pane
+behavior, see [CMUX.md](CMUX.md).
 
 Options:
 

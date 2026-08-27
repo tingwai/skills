@@ -1,3 +1,12 @@
+import { renderAgentMarkdown } from "./markdown-renderer.js";
+import {
+  selectionAfterAppend,
+  selectionForIndex,
+  selectionForNavigation,
+  selectionForSessionReset,
+} from "./selection-state.js";
+import { installMinimap } from "./minimap.js";
+
 const MAX_JSON_STRING_LENGTH = 500;
 const MAX_JSON_COLLECTION_ITEMS = 100;
 const MAX_JSON_DEPTH = 12;
@@ -21,6 +30,7 @@ let selectedEvent = null;
 let transcriptLabel = "Waiting for transcript";
 let lastShiftWheelAt = 0;
 let lastShiftWheelDirection = 0;
+let minimap = null;
 
 function element(tagName, className, text) {
   const node = document.createElement(tagName);
@@ -330,7 +340,13 @@ function renderRecord(record) {
   if (record?.type !== "event_msg") return null;
   let item = record.payload?.item;
   if (record.payload?.type === "user_message") item = { type: "UserMessage", content: record.payload.message };
-  if (record.payload?.type === "agent_message") item = { type: "AgentMessage", content: record.payload.message };
+  if (record.payload?.type === "agent_message") {
+    item = {
+      type: "AgentMessage",
+      content: record.payload.message,
+      phase: record.payload.phase,
+    };
+  }
   if (!item) return null;
 
   if (item.type === "CommandExecution") return commandEvent(item, record.timestamp);
@@ -347,7 +363,11 @@ function renderRecord(record) {
   if (item.type === "Reasoning" && !contentText(item.summary_text)) return null;
   const shell = eventShell(kind, label, detail, record.timestamp);
   if (item.type === "UserMessage" || item.type === "AgentMessage") {
-    shell.body.append(element("div", "prose", contentText(item.content)));
+    const message = contentText(item.content);
+    const markdown = item.type === "AgentMessage"
+      ? renderAgentMarkdown(document, item, message)
+      : null;
+    shell.body.append(markdown ?? element("div", "prose", message));
   } else if (item.type === "Reasoning") {
     const summary = contentText(item.summary_text);
     shell.body.append(element("div", "prose", summary));
@@ -386,10 +406,15 @@ function applyFilters() {
       Boolean(query && !item.textContent.toLocaleLowerCase().includes(query));
   }
   updateSessionMetadata();
+  minimap?.refresh();
 }
 
 function visibleEvents() {
   return [...tape.children].filter((item) => !item.hidden);
+}
+
+function allEvents() {
+  return [...tape.children];
 }
 
 function selectEvent(item, { scroll = true, block = "center" } = {}) {
@@ -405,6 +430,26 @@ function selectEvent(item, { scroll = true, block = "center" } = {}) {
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       block,
     });
+  }
+  minimap?.refresh();
+}
+
+function selectOverviewIndex(index) {
+  const events = allEvents();
+  const item = events[index];
+  if (!item) return;
+  if (item.hidden) {
+    searchInput.value = "";
+    activeFilters.add(item.dataset.kind);
+    filtersElement.querySelector(`[data-filter="${item.dataset.kind}"]`)
+      ?.setAttribute("aria-pressed", "true");
+    applyFilters();
+  }
+  const nextSelection = selectionForIndex(events.length, index);
+  selectEvent(item, { block: nextSelection.following ? "end" : "center" });
+  setFollow(nextSelection.following);
+  if (nextSelection.following) {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
   }
 }
 
@@ -424,8 +469,14 @@ function navigateVisibleEvents(direction) {
     }, 0);
   }
 
-  selectEvent(events[Math.max(0, Math.min(events.length - 1, index + direction))]);
-  setFollow(false);
+  const nextSelection = selectionForNavigation(events.length, index, direction);
+  selectEvent(events[nextSelection.selectedIndex], {
+    block: nextSelection.following ? "end" : "center",
+  });
+  setFollow(nextSelection.following);
+  if (nextSelection.following) {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+  }
 }
 
 function updateConnectionState() {
@@ -451,6 +502,7 @@ function updateSessionMetadata() {
 }
 
 function sessionLabel(transcript) {
+  if (!transcript) return "Waiting for transcript";
   const sessionId = String(transcript).match(
     /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/iu,
   )?.[1];
@@ -466,7 +518,7 @@ function jumpToBoundary(boundary, resumeFollow) {
   if (newest) {
     window.scrollTo({
       top: document.documentElement.scrollHeight,
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      behavior: "auto",
     });
   } else {
     selectedEvent.scrollIntoView({
@@ -477,6 +529,7 @@ function jumpToBoundary(boundary, resumeFollow) {
 }
 
 function appendRecord(record) {
+  const selectedIndex = visibleEvents().indexOf(selectedEvent);
   const item = renderRecord(record);
   if (!item) return;
   emptyState.hidden = true;
@@ -485,9 +538,38 @@ function appendRecord(record) {
   filterCounts.set(item.dataset.kind, count);
   filtersElement.querySelector(`[data-filter="${item.dataset.kind}"] .count`).textContent = String(count);
   applyFilters();
-  if (follow) {
-    selectEvent(item, { scroll: false });
+  const events = visibleEvents();
+  const nextSelection = selectionAfterAppend(events.length, selectedIndex, follow);
+  setFollow(nextSelection.following);
+  if (nextSelection.following && nextSelection.selectedIndex >= 0) {
+    selectEvent(events[nextSelection.selectedIndex], { scroll: false });
     requestAnimationFrame(() => window.scrollTo({ top: document.documentElement.scrollHeight }));
+  }
+  minimap?.refresh();
+}
+
+function resetForSession(value) {
+  const resetSelection = selectionForSessionReset();
+  const nextTranscriptLabel = sessionLabel(value.transcript);
+  const sessionChanged = transcriptLabel !== "Waiting for transcript"
+    && transcriptLabel !== nextTranscriptLabel;
+  tape.replaceChildren();
+  selectedEvent = null;
+  previousRenderedAt = null;
+  for (const filter of FILTERS) {
+    filterCounts.set(filter, 0);
+    filtersElement.querySelector(`[data-filter="${filter}"] .count`).textContent = "0";
+  }
+  emptyState.hidden = false;
+  transcriptLabel = nextTranscriptLabel;
+  connected = true;
+  setFollow(resetSelection.following);
+  applyFilters();
+  minimap?.refresh();
+  if (sessionChanged || value.reason === "active_session_changed") {
+    notice.textContent = `Switched to session ${transcriptLabel}`;
+    notice.hidden = false;
+    setTimeout(() => { notice.hidden = true; }, 4_000);
   }
 }
 
@@ -499,14 +581,20 @@ function setFollow(nextFollow) {
 }
 
 renderFilterControls();
+minimap = installMinimap({
+  getEvents: allEvents,
+  selectIndex: selectOverviewIndex,
+});
 searchInput.addEventListener("input", applyFilters);
 pauseButton.addEventListener("click", () => setFollow(!follow));
 // Selecting a card establishes the anchor for subsequent j/k navigation.
 tape.addEventListener("click", (event) => {
   const item = event.target.closest(".event");
   if (!item || !tape.contains(item)) return;
+  const events = visibleEvents();
+  const nextSelection = selectionForIndex(events.length, events.indexOf(item));
   selectEvent(item, { scroll: false });
-  setFollow(false);
+  setFollow(nextSelection.following);
 });
 jumpButton.addEventListener("click", () => jumpToBoundary("newest", true));
 document.addEventListener("keydown", (event) => {
@@ -542,8 +630,13 @@ window.addEventListener("wheel", (event) => {
   }
   if (event.deltaY < 0) setFollow(false);
 }, { passive: false });
+window.addEventListener("scroll", () => {
+  const distanceFromLatest = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+  if (follow && distanceFromLatest > 160) setFollow(false);
+}, { passive: true });
 
 const source = new EventSource("/events");
+source.addEventListener("session", (event) => resetForSession(JSON.parse(event.data)));
 source.addEventListener("record", (event) => appendRecord(JSON.parse(event.data)));
 source.addEventListener("ready", (event) => {
   const value = JSON.parse(event.data);

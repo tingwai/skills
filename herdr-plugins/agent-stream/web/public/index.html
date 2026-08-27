@@ -3,9 +3,11 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="dark light">
     <title>Codex session tape</title>
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/ide-rail.css">
+    <link rel="stylesheet" href="/markdown.css">
   </head>
   <body>
     <header class="masthead">
@@ -35,13 +37,21 @@
       </div>
     </nav>
 
-    <main>
-      <div id="empty" class="empty-state">
-        <div class="empty-pulse" aria-hidden="true"></div>
-        <h2>Listening for the next event</h2>
-        <p>The tape fills as Codex writes to this session’s transcript.</p>
+    <main id="stream-main">
+      <div class="view-layout">
+        <section class="transcript-column" aria-label="Readable transcript">
+          <div id="empty" class="empty-state">
+            <div class="empty-pulse" aria-hidden="true"></div>
+            <h2>Nothing to display yet.</h2>
+            <p>The tape fills as Codex writes to this session’s transcript.</p>
+          </div>
+          <ol id="tape" class="tape" aria-label="Codex transcript events"></ol>
+        </section>
+        <aside id="minimap" class="minimap" aria-label="Transcript minimap">
+          <canvas id="minimap-canvas" aria-label="Click or drag to navigate the transcript"></canvas>
+          <span id="minimap-viewport" class="minimap-viewport" aria-hidden="true"></span>
+        </aside>
       </div>
-      <ol id="tape" class="tape" aria-label="Codex transcript events"></ol>
     </main>
 
     <aside id="notice" class="notice" role="status" hidden></aside>

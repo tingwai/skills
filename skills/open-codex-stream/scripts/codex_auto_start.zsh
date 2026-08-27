@@ -1,4 +1,4 @@
-# Open the Codex stream beside interactive Codex sessions started inside Cmux.
+# Open the browser Codex stream beside interactive Codex sessions started inside Cmux.
 # Sourcing this file is safe outside Cmux: the wrapper delegates directly.
 
 _cmux_codex_starts_session() {
@@ -30,8 +30,12 @@ _cmux_codex_starts_session() {
 codex() {
   if [[ -n "${CMUX_SURFACE_ID:-}" && -n "${CMUX_WORKSPACE_ID:-}" && "${HERDR_ENV:-}" != "1" ]] \
       && _cmux_codex_starts_session "$@"; then
-    node "$HOME/.codex/skills/open-codex-stream/scripts/open_stream.mjs" --auto \
-      </dev/null >/dev/null 2>&1 &!
+    local stream_launcher="${CODEX_STREAM_AUTO_LAUNCHER:-$HOME/.codex/skills/open-codex-stream/scripts/open_web_stream_cmux.mjs}"
+    local stream_node="${CODEX_STREAM_NODE_PATH:-$(command -v node)}"
+    local stream_log_directory="${CODEX_STREAM_LOG_DIRECTORY:-$HOME/.cmuxterm/agent-stream-web}"
+    command mkdir -p -- "$stream_log_directory" 2>/dev/null
+    command "$stream_node" "$stream_launcher" --auto </dev/null \
+      >>"$stream_log_directory/auto-${CMUX_SURFACE_ID}.log" 2>&1 &!
   fi
   command codex "$@"
 }

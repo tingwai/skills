@@ -9,6 +9,11 @@ import {
   shouldCloseCmuxViewer,
 } from "./viewer-lifecycle.mjs";
 import { VIEWER_HELP, enterEmptyState, renderEmptyState } from "./viewer-rendering.mjs";
+import {
+  selectionAfterAppend,
+  selectionForIndex,
+  selectionForNavigation,
+} from "./web/public/selection-state.js";
 
 let transcriptPath = process.env.CODEX_TRANSCRIPT_PATH ?? "";
 let sessionId = process.env.CODEX_SESSION_ID ?? "";
@@ -376,6 +381,7 @@ function recordToEvent(record) {
 
 function appendEvent(event) {
   if (!event) return false;
+  const wasFollowing = state.following;
   const previous = state.events.at(-1)?.timestampMs ?? null;
   event.elapsed = formatElapsed(event.timestampMs, previous);
   if (event.lines.length > eventLineLimit) {
@@ -388,7 +394,9 @@ function appendEvent(event) {
     state.events.splice(0, removed);
     state.selectedIndex = Math.max(-1, state.selectedIndex - removed);
   }
-  if (state.following || state.selectedIndex < 0) state.selectedIndex = state.events.length - 1;
+  const nextSelection = selectionAfterAppend(state.events.length, state.selectedIndex, wasFollowing);
+  state.selectedIndex = nextSelection.selectedIndex;
+  state.following = nextSelection.following;
   return true;
 }
 
@@ -597,9 +605,10 @@ function scrollToSelected(positionMode = "top") {
 
 function selectRelative(delta) {
   if (!state.events.length) return;
-  state.following = false;
-  state.selectedIndex = Math.max(0, Math.min(state.events.length - 1, state.selectedIndex + delta));
-  scrollToSelected();
+  const nextSelection = selectionForNavigation(state.events.length, state.selectedIndex, delta);
+  state.selectedIndex = nextSelection.selectedIndex;
+  state.following = nextSelection.following;
+  scrollToSelected(state.following ? "bottom" : "top");
   render();
 }
 
@@ -678,8 +687,10 @@ function handleMouse(code, row, suffix) {
   if ((code & 3) !== 0) return;
   const hit = state.visibleRows.get(row);
   if (!hit) return;
-  state.following = false;
-  state.selectedIndex = hit.eventIndex;
+  const nextSelection = selectionForIndex(state.events.length, hit.eventIndex);
+  state.selectedIndex = nextSelection.selectedIndex;
+  state.following = nextSelection.following;
+  if (state.following) scrollToSelected("bottom");
   render();
 }
 
@@ -703,9 +714,10 @@ function handleInput(data) {
     scrollToSelected("bottom");
     render();
   } else if (keyboard === "g") {
-    state.following = false;
-    state.selectedIndex = state.events.length ? 0 : -1;
-    scrollToSelected();
+    const nextSelection = selectionForIndex(state.events.length, 0);
+    state.following = nextSelection.following;
+    state.selectedIndex = nextSelection.selectedIndex;
+    scrollToSelected(state.following ? "bottom" : "top");
     render();
   }
 }

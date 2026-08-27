@@ -3,11 +3,38 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
-if (process.env.HERDR_ENV !== "1" && process.env.CMUX_SURFACE_ID) {
-  await import("./open_stream_cmux.mjs");
+const rawArguments = process.argv.slice(2);
+const browserRequested = rawArguments.includes("--browser");
+const terminalRequested = rawArguments.includes("--terminal");
+if (browserRequested && terminalRequested) fail("Choose either --browser or --terminal, not both");
+const inHerdr = process.env.HERDR_ENV === "1";
+const inCmux = !inHerdr && Boolean(process.env.CMUX_SURFACE_ID);
+const mode = browserRequested ? "browser" : terminalRequested ? "terminal" : inCmux ? "browser" : "terminal";
+const forwardedArguments = rawArguments.filter((argument) =>
+  !["--browser", "--terminal"].includes(argument));
+
+if (mode === "browser") {
+  if (inHerdr) {
+    fail("Browser Codex Stream is available only inside Cmux; use --terminal in Herdr");
+  }
+  if (!process.env.CMUX_SURFACE_ID) {
+    fail("Browser Codex Stream must run inside a Cmux terminal");
+  }
+  const browserLauncher = process.env.CODEX_STREAM_BROWSER_LAUNCHER
+    ?? path.join(import.meta.dirname, "open_web_stream_cmux.mjs");
+  process.argv = [process.argv[0], browserLauncher, ...forwardedArguments];
+  await import(browserLauncher);
   process.exit(process.exitCode ?? 0);
 }
-if (process.env.HERDR_ENV !== "1") {
+
+if (inCmux) {
+  const terminalLauncher = process.env.CODEX_STREAM_TERMINAL_LAUNCHER
+    ?? path.join(import.meta.dirname, "open_stream_cmux.mjs");
+  process.argv = [process.argv[0], terminalLauncher, ...forwardedArguments];
+  await import(terminalLauncher);
+  process.exit(process.exitCode ?? 0);
+}
+if (!inHerdr) {
   process.stderr.write("This skill must run inside a Cmux or Herdr-managed terminal.\n");
   process.exit(1);
 }
@@ -17,7 +44,7 @@ const legacyPluginId = "local.agent-stream";
 const supportedPluginIds = [preferredPluginId, legacyPluginId];
 const pluginSource = "tingwai/skills/herdr-plugins/agent-stream";
 const herdr = process.env.HERDR_BIN_PATH ?? "herdr";
-const options = new Set(process.argv.slice(2));
+const options = new Set(forwardedArguments);
 
 for (const option of options) {
   if (!["--install", "--enable"].includes(option)) {

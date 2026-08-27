@@ -2,9 +2,9 @@
 
 Small, focused skills for coding agents.
 
-## Codex session tape
+## Codex Stream
 
-![Codex session tape showing a live transcript beside its Codex session](assets/codex-session-tape.png)
+![Codex Stream displaying a live, color-coded Codex session](assets/codex-stream.png)
 
 The `open-codex-stream` skill keeps a live, navigable transcript beside the
 active Codex session, including messages, commands, output, file changes, and

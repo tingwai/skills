@@ -115,6 +115,10 @@ test("browser launcher serves the shared empty state plus history and live SSE",
 
   try {
     const page = await fetch(details.url).then((response) => response.text());
+    assert.match(page, /<title>Codex Stream<\/title>/u);
+    assert.match(page, /<h1>Codex Stream<\/h1>/u);
+    assert.match(page, /id="stream"/u);
+    assert.doesNotMatch(page, /Session tape|Live transcript|id="tape"|class="tape"/iu);
     assert.match(page, /Nothing to display yet\./u);
     assert.match(page, /id="minimap"/u);
     assert.match(page, /id="minimap-canvas"/u);
@@ -451,7 +455,7 @@ test("minimap maps tall-output navigation and pins the viewport at true bottom",
     setPointerCapture() {},
   };
   const viewport = { style: {} };
-  const tape = {};
+  const stream = {};
   const events = [
     { dataset: { kind: "user", contentLength: "20" }, getBoundingClientRect: () => ({ top: -200, height: 120 }) },
     { dataset: { kind: "command", contentLength: "200" }, getBoundingClientRect: () => ({ top: -80, height: 120 }) },
@@ -460,7 +464,7 @@ test("minimap maps tall-output navigation and pins the viewport at true bottom",
   const documentValue = {
     documentElement: { scrollHeight: 2_000 },
     querySelector(selector) {
-      return { "#minimap-canvas": canvas, "#minimap-viewport": viewport, "#tape": tape }[selector] ?? null;
+      return { "#minimap-canvas": canvas, "#minimap-viewport": viewport, "#stream": stream }[selector] ?? null;
     },
     addEventListener(name, listener) { listeners.set(`document:${name}`, listener); },
   };

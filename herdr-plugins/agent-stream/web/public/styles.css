@@ -176,7 +176,7 @@ main {
   animation: breathe 2s ease-in-out infinite;
 }
 
-.tape { margin: 0; padding: 0; list-style: none; }
+.stream { margin: 0; padding: 0; list-style: none; }
 
 .event {
   --event-color: var(--muted);

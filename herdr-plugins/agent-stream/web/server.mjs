@@ -483,7 +483,7 @@ const idleShutdown = options.exitIdle === undefined ? null : setInterval(() => {
 }, 1_000);
 
 server.listen(options.port, "127.0.0.1", () => {
-  process.stdout.write(`Codex session tape: http://127.0.0.1:${options.port}/\n`);
+  process.stdout.write(`Codex Stream: http://127.0.0.1:${options.port}/\n`);
   process.stdout.write(transcriptPath
     ? `Watching ${transcriptPath}\n`
     : `Waiting for a Codex session on Cmux surface ${options.cmuxSurface}\n`);

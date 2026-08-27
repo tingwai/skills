@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark light">
-    <title>Codex session tape</title>
+    <title>Codex Stream</title>
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/ide-rail.css">
     <link rel="stylesheet" href="/markdown.css">
@@ -14,8 +14,8 @@
       <div class="identity">
         <span class="live-mark" aria-hidden="true"></span>
         <div>
-          <p class="eyebrow">Live transcript</p>
-          <h1>Session tape</h1>
+          <p class="eyebrow">Live session</p>
+          <h1>Codex Stream</h1>
         </div>
       </div>
       <div class="session-state" aria-live="polite">
@@ -50,9 +50,9 @@
           <div id="empty" class="empty-state">
             <div class="empty-pulse" aria-hidden="true"></div>
             <h2>Nothing to display yet.</h2>
-            <p>The tape fills as Codex writes to this session’s transcript.</p>
+            <p>Codex Stream fills as Codex writes to this session.</p>
           </div>
-          <ol id="tape" class="tape" aria-label="Codex transcript events"></ol>
+          <ol id="stream" class="stream" aria-label="Codex Stream events"></ol>
         </section>
         <aside id="minimap" class="minimap" aria-label="Transcript minimap">
           <canvas id="minimap-canvas" role="scrollbar" tabindex="0" aria-label="Transcript scroll position" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></canvas>

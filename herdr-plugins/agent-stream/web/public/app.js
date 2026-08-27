@@ -15,7 +15,7 @@ const MAX_JSON_COLLECTION_ITEMS = 100;
 const MAX_JSON_DEPTH = 12;
 const FILTERS = ["user", "agent", "command", "reasoning", "change", "extension", "other"];
 
-const tape = document.querySelector("#tape");
+const stream = document.querySelector("#stream");
 const emptyState = document.querySelector("#empty");
 const connection = document.querySelector("#connection");
 const sessionName = document.querySelector("#session-name");
@@ -406,7 +406,7 @@ function renderFilterControls() {
 }
 
 function applyFilters() {
-  for (const item of tape.children) {
+  for (const item of stream.children) {
     item.hidden = !activeFilters.has(item.dataset.kind);
   }
   updateSessionMetadata();
@@ -418,7 +418,7 @@ function updateStickyContexts() {
   stickyContextFrame = null;
   const stickyTop = Math.max(0, Math.ceil(controlStrip.getBoundingClientRect().bottom));
   document.documentElement.style.setProperty("--event-sticky-top", `${stickyTop}px`);
-  for (const item of tape.children) {
+  for (const item of stream.children) {
     const eventHeight = item.hidden ? 0 : item.getBoundingClientRect().height;
     item.classList.toggle(
       "is-long",
@@ -433,7 +433,7 @@ function scheduleStickyContexts() {
 }
 
 function visibleEvents() {
-  return [...tape.children].filter((item) => !item.hidden);
+  return [...stream.children].filter((item) => !item.hidden);
 }
 
 function selectEvent(item, { scroll = true, block = "center" } = {}) {
@@ -545,7 +545,7 @@ function appendRecord(record) {
   const item = renderRecord(record);
   if (!item) return;
   emptyState.hidden = true;
-  tape.append(item);
+  stream.append(item);
   const count = (filterCounts.get(item.dataset.kind) ?? 0) + 1;
   filterCounts.set(item.dataset.kind, count);
   filtersElement.querySelector(`[data-filter="${item.dataset.kind}"] .count`).textContent = String(count);
@@ -565,7 +565,7 @@ function resetForSession(value) {
   const nextTranscriptLabel = sessionLabel(value.transcript);
   const sessionChanged = transcriptLabel !== "Waiting for transcript"
     && transcriptLabel !== nextTranscriptLabel;
-  tape.replaceChildren();
+  stream.replaceChildren();
   selectedEvent = null;
   previousRenderedAt = null;
   for (const filter of FILTERS) {
@@ -597,12 +597,12 @@ minimap = installMinimap({
   navigate: navigateOverview,
 });
 new ResizeObserver(scheduleStickyContexts).observe(controlStrip);
-new ResizeObserver(scheduleStickyContexts).observe(tape);
+new ResizeObserver(scheduleStickyContexts).observe(stream);
 window.addEventListener("resize", scheduleStickyContexts, { passive: true });
 // Selecting a card establishes the anchor for subsequent j/k navigation.
-tape.addEventListener("click", (event) => {
+stream.addEventListener("click", (event) => {
   const item = event.target.closest(".event");
-  if (!item || !tape.contains(item)) return;
+  if (!item || !stream.contains(item)) return;
   const events = visibleEvents();
   const nextSelection = selectionForIndex(events.length, events.indexOf(item));
   selectEvent(item, { scroll: false });

@@ -404,14 +404,14 @@ export function installMinimap({ documentValue = document, windowValue = window,
     geometryVersion += 1;
     refresh();
   }, { passive: true });
-  const transcript = documentValue.querySelector("#tape");
-  const geometryObserver = windowValue.ResizeObserver && transcript
+  const stream = documentValue.querySelector("#stream");
+  const geometryObserver = windowValue.ResizeObserver && stream
     ? new windowValue.ResizeObserver(() => {
       geometryVersion += 1;
       refresh();
     })
     : null;
-  geometryObserver?.observe(transcript);
+  geometryObserver?.observe(stream);
 
   refresh();
   return { refresh };

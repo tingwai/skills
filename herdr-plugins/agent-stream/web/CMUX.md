@@ -1,6 +1,6 @@
 # Cmux browser stream
 
-This is lightweight glue around the existing read-only browser session tape.
+This is lightweight glue around the existing read-only Codex Stream browser.
 It is the automatic Cmux viewer; the terminal TUI remains available as the
 manual fallback and the Herdr viewer is unchanged.
 
@@ -33,7 +33,7 @@ Reaching the true document bottom by any scrolling method also resumes live
 follow and synchronizes selection to the newest event; moving upward pauses it.
 
 If Codex `/resume` changes the active conversation in the same source surface,
-the server detects Cmux's new active session, clears the old browser tape, loads
+the server detects Cmux's new active session, clears the old stream, loads
 the resumed transcript's retained history, and follows it in the existing pane.
 
 For server-only testing outside Cmux:

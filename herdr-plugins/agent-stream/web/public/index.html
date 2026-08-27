@@ -21,18 +21,25 @@
       <div class="session-state" aria-live="polite">
         <span id="connection" class="connection is-connecting">Connecting</span>
         <span id="session-name" class="session-name">Waiting for transcript</span>
+        <details class="settings-menu">
+          <summary aria-label="Open settings" title="Settings">☰</summary>
+          <div class="settings-menu-panel">
+            <strong>Settings</strong>
+            <section aria-labelledby="debug-settings-heading">
+              <h2 id="debug-settings-heading">Debug</h2>
+              <label>
+                <input id="toggle-minimap-debug" type="checkbox" aria-controls="minimap-debug-controls">
+                Show minimap tuning
+              </label>
+            </section>
+          </div>
+        </details>
       </div>
     </header>
 
     <nav class="control-strip" aria-label="Stream controls">
-      <label class="search-control">
-        <span>Find</span>
-        <input id="search" type="search" placeholder="command, output, path…" autocomplete="off">
-        <kbd>/</kbd>
-      </label>
       <div id="filters" class="filters" aria-label="Event filters"></div>
       <div class="stream-actions">
-        <button id="pause" class="quiet-button" type="button" aria-pressed="false" title="Pause automatic live follow">Pause follow</button>
         <button id="jump-live" class="live-button" type="button" title="Jump to newest and resume follow (G)">Jump to live</button>
       </div>
     </nav>
@@ -55,6 +62,35 @@
     </main>
 
     <aside id="notice" class="notice" role="status" hidden></aside>
+    <!-- PROTOTYPE — Which minimap range, parallax, focus, and viewport scale feel right? -->
+    <aside id="minimap-debug-controls" class="minimap-debug-controls" aria-label="Temporary minimap tuning controls" hidden>
+      <header>
+        <strong>Minimap tuning</strong>
+        <span>Throwaway controls</span>
+      </header>
+      <div class="minimap-debug-grid">
+        <label>
+          <span>Visible range <output data-minimap-output="windowViewports">66.5 viewports</output></span>
+          <input type="range" min="2" max="200" step="0.5" value="66.5" data-minimap-setting="windowViewports">
+        </label>
+        <label>
+          <span>Parallax drift <output data-minimap-output="parallax">35%</output></span>
+          <input type="range" min="0" max="1" step="0.05" value="0.35" data-minimap-setting="parallax">
+        </label>
+        <label>
+          <span>Focus zoom <output data-minimap-output="focusGain">5.00×</output></span>
+          <input type="range" min="0" max="10" step="0.25" value="5" data-minimap-setting="focusGain">
+        </label>
+        <label>
+          <span>Focus radius <output data-minimap-output="focusRadius">1.35 viewport</output></span>
+          <input type="range" min="0.25" max="4" step="0.05" value="1.35" data-minimap-setting="focusRadius">
+        </label>
+        <label>
+          <span>Viewport box <output data-minimap-output="thumbScale">1.00×</output></span>
+          <input type="range" min="0.5" max="3" step="0.1" value="1" data-minimap-setting="thumbScale">
+        </label>
+      </div>
+    </aside>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

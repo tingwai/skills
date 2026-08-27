@@ -39,12 +39,12 @@
 
 .markdown .markdown-code-block {
   margin: .45em 0 .7em;
-  padding: 7px 9px;
+  padding: 8px 10px;
   border: 1px solid var(--rule);
   border-radius: 2px;
   color: var(--ink);
   background: color-mix(in srgb, var(--base) 72%, var(--surface));
-  font: 10.5px/1.48 var(--utility-font);
+  font: 11.5px/1.48 var(--utility-font);
   white-space: pre;
   overflow-wrap: normal;
 }

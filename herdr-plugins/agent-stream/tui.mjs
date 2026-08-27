@@ -658,7 +658,7 @@ function render() {
     if (entry) state.visibleRows.set(terminalRow, entry);
     output.push(entry ? paint(entry, width) : " ".repeat(width));
   }
-  const statusLabel = state.following ? "LIVE" : "PAUSED";
+  const statusLabel = state.following ? "LIVE" : "HISTORY";
   const stateSegment = state.following ? ` ${statusLabel} ` : statusLabel;
   const prefix = ` ${state.selectedIndex + 1}/${state.events.length} · `;
   const status = clip(`${prefix}${stateSegment} · session ${displayedSessionId} `, width).padEnd(width);

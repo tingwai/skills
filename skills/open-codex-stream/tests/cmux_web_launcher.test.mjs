@@ -6,11 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
-  minimapBarWidths,
+  minimapFocusMapper,
+  packMinimapBars,
+  minimapWindow,
   minimapViewport,
   eventIndexAtDocumentOffset,
   installMinimap,
-  lensMapper,
   sampleMinimap,
 } from "../../../herdr-plugins/agent-stream/web/public/minimap.js";
 import {
@@ -21,6 +22,7 @@ import {
 } from "../../../herdr-plugins/agent-stream/web/public/markdown-renderer.js";
 import {
   followAfterScroll,
+  isLongEvent,
   isTranscriptBottom,
   selectionAfterAppend,
   selectionForNavigation,
@@ -116,6 +118,11 @@ test("browser launcher serves the shared empty state plus history and live SSE",
     assert.match(page, /Nothing to display yet\./u);
     assert.match(page, /id="minimap"/u);
     assert.match(page, /id="minimap-canvas"/u);
+    assert.match(page, /id="toggle-minimap-debug"/u);
+    assert.match(page, /id="minimap-debug-controls"[^>]*hidden/u);
+    assert.match(page, /value="66\.5"[^>]*data-minimap-setting="windowViewports"/u);
+    assert.doesNotMatch(page, /id="search"|search-control|command, output, path/u);
+    assert.doesNotMatch(page, /id="pause"|Pause follow|Resume follow|quiet-button/u);
     assert.match(page, /role="scrollbar"/u);
     assert.match(page, /tabindex="0"/u);
     assert.doesNotMatch(page, /view-switcher|view-select|waterfall|Theme test|theme-select|Terminal Ledger|Signal Index|Baseline/u);
@@ -219,6 +226,13 @@ test("true transcript bottom resumes live across every scroll path without tall-
   assert.deepEqual(paused, { selectedIndex: 2, following: false });
 });
 
+test("sticky event context is reserved for messages taller than the usable viewport", () => {
+  assert.equal(isLongEvent(701, 800, 100), true);
+  assert.equal(isLongEvent(700, 800, 100), false);
+  assert.equal(isLongEvent(1_400, 800, 100), true);
+  assert.equal(isLongEvent(100, 0, 100), false);
+});
+
 test("assistant Markdown parsing is safe, scoped, and preserves plain text fallback", () => {
   class FakeNode {
     constructor(type, value = "") {
@@ -288,15 +302,26 @@ test("IDE Activity Rail is the sole compact skin in narrow panes", () => {
   const ideCss = fs.readFileSync(path.join(publicDirectory, "ide-rail.css"), "utf8");
   const markdownCss = fs.readFileSync(path.join(publicDirectory, "markdown.css"), "utf8");
   assert.match(ideCss, /IDE Activity Rail — the sole browser stream skin/u);
-  assert.match(ideCss, /\.event-header \{\s*min-height: 24px;/u);
-  assert.match(ideCss, /\.event-body \{ padding: 4px 8px 8px; \}/u);
+  assert.doesNotMatch(ideCss, /\bzoom\s*:/u);
+  assert.match(ideCss, /\.event-header \{\s*min-height: 26px;/u);
+  assert.match(ideCss, /\.event\.is-long > \.event-header \{\s*position: sticky;/u);
+  assert.match(ideCss, /top: var\(--event-sticky-top\);/u);
+  assert.match(ideCss, /\.event-body \{ padding: 4\.5px 9px 9px; \}/u);
+  assert.match(ideCss, /main \{ width: 100%; margin: 0; padding: 11px 11px 0; \}/u);
+  assert.match(ideCss, /\.transcript-column \{ min-width: 0; padding-bottom: 42vh; \}/u);
   assert.match(ideCss, /border-radius: 2px/u);
   assert.match(ideCss, /@media \(max-width: 420px\)/u);
-  assert.match(ideCss, /grid-template-columns: minmax\(0, 1fr\) 18px/u);
-  assert.match(ideCss, /\.minimap canvas \{\s*width: 16px;/u);
   assert.match(ideCss, /grid-template-columns: minmax\(0, 1fr\) 16px/u);
+  assert.match(ideCss, /\.minimap canvas \{\s*width: 14\.4px;/u);
+  assert.match(ideCss, /grid-template-columns: minmax\(0, 1fr\) 14\.4px/u);
+  assert.match(ideCss, /\.minimap-viewport[^{]*\{[^}]*box-sizing: border-box;[^}]*border: 2px solid #fff;/u);
   assert.match(ideCss, /scrollbar-width: none/u);
   assert.match(ideCss, /html::-webkit-scrollbar/u);
+  for (const filter of ["user", "agent", "command", "reasoning", "change", "extension"]) {
+    assert.match(ideCss, new RegExp(`\\.filter\\[data-filter="${filter}"\\]`, "u"));
+  }
+  assert.match(ideCss, /box-shadow: inset 0 -2px var\(--filter-color\)/u);
+  assert.match(ideCss, /\.filter\[aria-pressed="false"\][^{]*\{[^}]*opacity: \.58/u);
   assert.match(markdownCss, /\.markdown-inline-code/u);
   assert.match(markdownCss, /font: \.9em\/1\.35 var\(--utility-font\)/u);
   assert.match(markdownCss, /\.markdown \.markdown-code-block/u);
@@ -314,51 +339,65 @@ test("minimap sampling stays bounded and maps click or drag to transcript select
   assert.equal(bins[0].startIndex, 0);
   assert.equal(bins.at(-1).endIndex, 9_999);
   assert.deepEqual(minimapViewport(1_500, 500, 2_000), {
-    topRatio: 1,
+    topRatio: .75,
     heightRatio: .25,
   });
   const partialViewport = minimapViewport(250, 500, 1_500);
-  assert.equal(partialViewport.topRatio, .25);
+  assert.ok(Math.abs(partialViewport.topRatio - 1 / 6) < 1e-12);
   assert.equal(partialViewport.heightRatio, 1 / 3);
+
+  const topWindow = minimapWindow(0, 500, 10_000);
+  const middleWindow = minimapWindow(4_750, 500, 10_000);
+  const bottomWindow = minimapWindow(9_500, 500, 10_000);
+  assert.deepEqual(topWindow, {
+    start: 0, end: 4_000, span: 4_000, topRatio: 0, heightRatio: .125,
+  });
+  assert.deepEqual(middleWindow, {
+    start: 3_000, end: 7_000, span: 4_000, topRatio: .4375, heightRatio: .125,
+  });
+  assert.deepEqual(bottomWindow, {
+    start: 6_000, end: 10_000, span: 4_000, topRatio: .875, heightRatio: .125,
+  });
+  assert.ok(minimapWindow(2_000, 500, 10_000, 8, 1).start >
+    minimapWindow(2_000, 500, 10_000, 8, 0).start);
+
+  const focus = minimapFocusMapper(.5, .125, 4, 1.25);
+  assert.ok(focus.forward(.5625) - focus.forward(.4375) > .125,
+    "Focus zoom magnifies the current viewport portion of the minimap");
+  for (const ratio of [0, .1, .5, .9, 1]) {
+    assert.ok(Math.abs(focus.inverse(focus.forward(ratio)) - ratio) < 1e-6);
+  }
   const newestIndex = events.length - 1;
   assert.equal(selectionForNavigation(events.length, newestIndex - 1, 1).following, true);
   assert.equal(selectionForNavigation(events.length, newestIndex, -1).following, false);
 });
 
-test("minimap mark width honestly scales content length in a narrow rail", () => {
-  const bins = sampleMinimap([
-    { kind: "status", contentLength: 0 },
-    { kind: "user", contentLength: 12 },
-    { kind: "agent", contentLength: 120 },
-    { kind: "agent", contentLength: 120 },
-    { kind: "command", contentLength: 1_200 },
-    { kind: "command", contentLength: 1_000_000_000 },
-  ]);
-  const widths = minimapBarWidths(bins, 12, 2);
-  assert.equal(widths[0], 2, "Empty and status-only events keep a visible minimum mark");
-  assert.ok(widths[1] < widths[2]);
-  assert.equal(widths[2], widths[3]);
-  assert.ok(widths[3] < widths[4]);
-  assert.ok(widths[4] < widths[5]);
-  assert.equal(widths[5], 12);
-  assert.ok(widths[2] > 3, "Log normalization keeps ordinary messages legible beside an outlier");
-  assert.ok(widths.every((width) => width >= 2 && width <= 12));
-  assert.deepEqual(
-    minimapBarWidths(sampleMinimap([{ kind: "command", contentLength: 0 }]), 12, 2),
-    [2],
-    "A tool event without meaningful body text remains visible",
-  );
-
+test("minimap aggregation retains event count and dominant kind", () => {
   const aggregate = sampleMinimap([
-    { kind: "agent", contentLength: 10 },
-    { kind: "agent", contentLength: 100 },
-    { kind: "agent", contentLength: 10_000 },
+    { kind: "agent" },
+    { kind: "command" },
+    { kind: "agent" },
   ], 1);
   assert.equal(aggregate[0].count, 3);
-  assert.equal(aggregate[0].aggregateLength, 100, "Aggregated bins use the robust median length");
+  assert.equal(aggregate[0].kind, "agent");
 });
 
-test("Focus Lens preserves measured geometry and exact partial-message position", () => {
+test("minimap bar packing enforces four-pixel marks without overlap", () => {
+  const packed = packMinimapBars([
+    { kind: "user", top: 0, height: 1 },
+    { kind: "agent", top: 1, height: 1 },
+    { kind: "command", top: 2, height: 80 },
+    { kind: "change", top: 79, height: 1 },
+  ], 80, 4);
+  assert.ok(packed.every((bar) => bar.height >= 4));
+  assert.ok(packed.every((bar) => bar.top >= 0 && bar.top + bar.height <= 80 + 1e-9));
+  for (let index = 1; index < packed.length; index += 1) {
+    assert.ok(packed[index].top >= packed[index - 1].top + packed[index - 1].height - 1e-9,
+      "Packed minimap bars must not overlap");
+  }
+});
+
+test("minimap preserves measured geometry and exact partial-message position", () => {
   const geometry = [
     { kind: "user", contentLength: 20, top: 100, height: 180 },
     { kind: "command", contentLength: 2_000, top: 280, height: 1_400 },
@@ -370,19 +409,12 @@ test("Focus Lens preserves measured geometry and exact partial-message position"
     { top: 280, bottom: 1_680 },
     { top: 1_680, bottom: 1_900 },
   ]);
-  const widths = minimapBarWidths(bins, 12, 2);
-  assert.ok(widths[1] > widths[2] && widths[2] > widths[0]);
   assert.equal(
     eventIndexAtDocumentOffset(geometry, 1_000),
     1,
     "Halfway scroll remains within the tall command instead of snapping to an event boundary",
   );
   assert.equal(eventIndexAtDocumentOffset(geometry, 1_750), 2);
-
-  const lens = lensMapper(.45, .2);
-  for (const ratio of [0, .05, .2, .45, .7, .95, 1]) {
-    assert.ok(Math.abs(lens.inverse(lens.forward(ratio)) - ratio) < 1e-6);
-  }
 
   const longGeometry = Array.from({ length: 10_000 }, (_, index) => ({
     kind: index % 2 ? "agent" : "command",
@@ -399,10 +431,12 @@ test("Focus Lens preserves measured geometry and exact partial-message position"
     "Resize redraws reuse deterministic bounded geometry");
 });
 
-test("Focus Lens renders, redraws, and maps tall-output navigation to true-bottom live state", () => {
+test("minimap maps tall-output navigation and pins the viewport at true bottom", () => {
   const listeners = new Map();
+  let fillCount = 0;
+  const fillRects = [];
   const context = {
-    setTransform() {}, clearRect() {}, fillRect() {},
+    setTransform() {}, clearRect() {}, fillRect(...rect) { fillCount += 1; fillRects.push(rect); },
     set fillStyle(value) {}, set globalAlpha(value) {},
   };
   const canvas = {
@@ -446,16 +480,30 @@ test("Focus Lens renders, redraws, and maps tall-output navigation to true-botto
     getEvents: () => events,
     navigate(value) { navigations.push(value); },
   });
+  assert.ok(fillRects.every(([, , width]) => width === 14),
+    "Every minimap event uses the full available rail width");
+  assert.ok(fillRects.every(([, , , height]) => height >= 4),
+    "Every minimap event remains at least four pixels tall");
+  for (let index = 1; index < fillRects.length; index += 1) {
+    const previousBottom = fillRects[index - 1][1] + fillRects[index - 1][3];
+    assert.ok(fillRects[index][1] >= previousBottom - 1e-9,
+      "Rendered minimap events must not overlap");
+  }
   listeners.get("canvas:pointerdown")({ clientY: 160, pointerId: 1 });
   assert.equal(navigations.at(-1).following, false,
-    "Focus Lens must not resume live in the middle of a tall newest output");
+    "The minimap must not resume live in the middle of a tall newest output");
   listeners.get("canvas:pointerdown")({ clientY: 320, pointerId: 1 });
   assert.equal(navigations.at(-1).following, true,
-    "Focus Lens must resume live at the true transcript bottom");
-  windowValue.scrollY = 900;
+    "The minimap must resume live at the true transcript bottom");
+  const initialFillCount = fillCount;
+  windowValue.scrollY = 1_500;
   assert.doesNotThrow(() => listeners.get("window:scroll")());
-  assert.match(viewport.style.top, /%$/u);
-  assert.match(viewport.style.height, /%$/u);
+  const viewportTop = Number.parseFloat(viewport.style.top);
+  const viewportHeight = Number.parseFloat(viewport.style.height);
+  assert.ok(viewportHeight > 25, "Focus zoom magnifies the viewport indicator");
+  assert.ok(Math.abs(viewportTop + viewportHeight - 100) < 1e-9,
+    "The magnified viewport indicator stays flush at true bottom");
+  assert.equal(fillCount, initialFillCount, "Scrolling moves only the viewport indicator, not minimap geometry");
 });
 
 test("manual launcher immediately attaches an existing exact-surface session with inactive registry flags", async () => {

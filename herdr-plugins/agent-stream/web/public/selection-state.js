@@ -26,6 +26,11 @@ export function selectionForSessionReset() {
   return { selectedIndex: -1, following: true };
 }
 
+export function isLongEvent(eventHeight, viewportHeight, stickyTop) {
+  const availableHeight = Math.max(0, viewportHeight - stickyTop);
+  return availableHeight > 0 && eventHeight > availableHeight;
+}
+
 export function isTranscriptBottom(scrollY, viewportHeight, documentHeight, tolerance = 2) {
   return documentHeight - scrollY - viewportHeight <= tolerance;
 }

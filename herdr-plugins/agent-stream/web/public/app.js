@@ -1,6 +1,7 @@
 import { renderAgentMarkdown } from "./markdown-renderer.js";
 import {
   followAfterScroll,
+  isLongEvent,
   isTranscriptBottom,
   selectionAfterAppend,
   selectionForIndex,
@@ -18,11 +19,10 @@ const tape = document.querySelector("#tape");
 const emptyState = document.querySelector("#empty");
 const connection = document.querySelector("#connection");
 const sessionName = document.querySelector("#session-name");
-const searchInput = document.querySelector("#search");
 const filtersElement = document.querySelector("#filters");
-const pauseButton = document.querySelector("#pause");
 const jumpButton = document.querySelector("#jump-live");
 const notice = document.querySelector("#notice");
+const controlStrip = document.querySelector(".control-strip");
 const filterCounts = new Map(FILTERS.map((filter) => [filter, 0]));
 const activeFilters = new Set(FILTERS);
 let follow = true;
@@ -34,6 +34,7 @@ let lastShiftWheelAt = 0;
 let lastShiftWheelDirection = 0;
 let minimap = null;
 let previousScrollY = window.scrollY;
+let stickyContextFrame = null;
 
 function element(tagName, className, text) {
   const node = document.createElement(tagName);
@@ -266,7 +267,8 @@ function eventShell(kind, label, detail, timestamp) {
   header.append(time);
   header.append(element("span", "header-marker"));
   header.append(element("span", "event-label", label));
-  if (detail) header.append(element("span", "event-detail", detail));
+  const detailNode = detail ? element("span", "event-detail", detail) : null;
+  if (detailNode) header.append(detailNode);
   const badges = element("div", "badges");
   header.append(badges);
   item.append(header);
@@ -278,12 +280,13 @@ function eventShell(kind, label, detail, timestamp) {
   card.append(body);
   content.append(card);
   item.append(content);
-  return { item, body, badges };
+  return { item, body, badges, detail: detailNode };
 }
 
 function commandEvent(item, timestamp) {
   const command = shellCommand(item.command);
-  const shell = eventShell("command", "Command", "", timestamp);
+  const shell = eventShell("command", "Command", command, timestamp);
+  if (shell.detail) shell.detail.title = command;
   const hasExitCode = Number.isInteger(item.exit_code);
   const successful = item.status === "completed" && (!hasExitCode || item.exit_code === 0);
   const failed = item.status === "failed" || (hasExitCode && item.exit_code !== 0);
@@ -403,13 +406,30 @@ function renderFilterControls() {
 }
 
 function applyFilters() {
-  const query = searchInput.value.trim().toLocaleLowerCase();
   for (const item of tape.children) {
-    item.hidden = !activeFilters.has(item.dataset.kind) ||
-      Boolean(query && !item.textContent.toLocaleLowerCase().includes(query));
+    item.hidden = !activeFilters.has(item.dataset.kind);
   }
   updateSessionMetadata();
   minimap?.refresh();
+  scheduleStickyContexts();
+}
+
+function updateStickyContexts() {
+  stickyContextFrame = null;
+  const stickyTop = Math.max(0, Math.ceil(controlStrip.getBoundingClientRect().bottom));
+  document.documentElement.style.setProperty("--event-sticky-top", `${stickyTop}px`);
+  for (const item of tape.children) {
+    const eventHeight = item.hidden ? 0 : item.getBoundingClientRect().height;
+    item.classList.toggle(
+      "is-long",
+      !item.hidden && isLongEvent(eventHeight, window.innerHeight, stickyTop),
+    );
+  }
+}
+
+function scheduleStickyContexts() {
+  if (stickyContextFrame !== null) return;
+  stickyContextFrame = requestAnimationFrame(updateStickyContexts);
 }
 
 function visibleEvents() {
@@ -524,7 +544,6 @@ function appendRecord(record) {
   const selectedIndex = visibleEvents().indexOf(selectedEvent);
   const item = renderRecord(record);
   if (!item) return;
-  item.dataset.contentLength = String(item.querySelector(".event-body")?.textContent.trim().length ?? 0);
   emptyState.hidden = true;
   tape.append(item);
   const count = (filterCounts.get(item.dataset.kind) ?? 0) + 1;
@@ -559,6 +578,7 @@ function resetForSession(value) {
   setFollow(resetSelection.following);
   applyFilters();
   minimap?.refresh();
+  scheduleStickyContexts();
   if (sessionChanged || value.reason === "active_session_changed") {
     notice.textContent = `Switched to session ${transcriptLabel}`;
     notice.hidden = false;
@@ -568,8 +588,6 @@ function resetForSession(value) {
 
 function setFollow(nextFollow) {
   follow = nextFollow;
-  pauseButton.setAttribute("aria-pressed", String(!follow));
-  pauseButton.textContent = follow ? "Pause follow" : "Resume follow";
   updateConnectionState();
 }
 
@@ -578,8 +596,9 @@ minimap = installMinimap({
   getEvents: visibleEvents,
   navigate: navigateOverview,
 });
-searchInput.addEventListener("input", applyFilters);
-pauseButton.addEventListener("click", () => setFollow(!follow));
+new ResizeObserver(scheduleStickyContexts).observe(controlStrip);
+new ResizeObserver(scheduleStickyContexts).observe(tape);
+window.addEventListener("resize", scheduleStickyContexts, { passive: true });
 // Selecting a card establishes the anchor for subsequent j/k navigation.
 tape.addEventListener("click", (event) => {
   const item = event.target.closest(".event");
@@ -596,10 +615,7 @@ jumpButton.addEventListener("click", () => jumpToBoundary("newest", true));
 document.addEventListener("keydown", (event) => {
   const typingTarget = event.target.matches("input, textarea, select, [contenteditable='true']");
   if (typingTarget) return;
-  if (event.key === "/" && document.activeElement !== searchInput) {
-    event.preventDefault();
-    searchInput.focus();
-  } else if (event.key === "j" || event.key === "k") {
+  if (event.key === "j" || event.key === "k") {
     event.preventDefault();
     navigateVisibleEvents(event.key === "j" ? 1 : -1);
   } else if (event.key === "G") {

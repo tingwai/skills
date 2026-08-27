@@ -2,6 +2,14 @@
 
 Small, focused skills for coding agents.
 
+## Codex session tape
+
+![Codex session tape showing a live transcript beside its Codex session](assets/codex-session-tape.png)
+
+The `open-codex-stream` skill keeps a live, navigable transcript beside the
+active Codex session, including messages, commands, output, file changes, and
+the color-coded minimap.
+
 ## Install in Claude Code
 
 ```text

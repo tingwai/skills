@@ -20,12 +20,17 @@ events until the reader scrolls upward, clicks an event, or pauses follow. The
 `Jump to live` button (or `G`) returns to the newest event.
 
 The IDE Activity Rail layout keeps the readable stream beside a narrow sampled
-whole-session minimap. Clicking or dragging the minimap selects the matching
-transcript event; selecting the newest event resumes live follow. Each mark's
+whole-session Focus Lens minimap. It preserves the full conversation while
+expanding the area around the current viewport. Clicking or dragging selects
+the matching transcript event; selecting the newest event resumes live follow. Each mark's
 horizontal width represents its event body's text length using logarithmic
 normalization, so extreme output does not flatten ordinary messages. Long
 sessions use the median text length within each bounded aggregate bin rather
-than implying an exact per-event value.
+than implying an exact per-event value. The viewport indicator and minimap
+scrubbing use the transcript's measured DOM geometry, so progress through a
+single tall message remains continuous instead of snapping between events.
+Reaching the true document bottom by any scrolling method also resumes live
+follow and synchronizes selection to the newest event; moving upward pauses it.
 
 If Codex `/resume` changes the active conversation in the same source surface,
 the server detects Cmux's new active session, clears the old browser tape, loads

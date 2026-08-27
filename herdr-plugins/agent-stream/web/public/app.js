@@ -1,5 +1,7 @@
 import { renderAgentMarkdown } from "./markdown-renderer.js";
 import {
+  followAfterScroll,
+  isTranscriptBottom,
   selectionAfterAppend,
   selectionForIndex,
   selectionForNavigation,
@@ -31,6 +33,7 @@ let transcriptLabel = "Waiting for transcript";
 let lastShiftWheelAt = 0;
 let lastShiftWheelDirection = 0;
 let minimap = null;
+let previousScrollY = window.scrollY;
 
 function element(tagName, className, text) {
   const node = document.createElement(tagName);
@@ -413,10 +416,6 @@ function visibleEvents() {
   return [...tape.children].filter((item) => !item.hidden);
 }
 
-function allEvents() {
-  return [...tape.children];
-}
-
 function selectEvent(item, { scroll = true, block = "center" } = {}) {
   if (!item) return;
   selectedEvent?.classList.remove("is-selected");
@@ -434,22 +433,15 @@ function selectEvent(item, { scroll = true, block = "center" } = {}) {
   minimap?.refresh();
 }
 
-function selectOverviewIndex(index) {
-  const events = allEvents();
+function navigateOverview({ index, scrollTop, following }) {
+  const events = visibleEvents();
   const item = events[index];
-  if (!item) return;
-  if (item.hidden) {
-    searchInput.value = "";
-    activeFilters.add(item.dataset.kind);
-    filtersElement.querySelector(`[data-filter="${item.dataset.kind}"]`)
-      ?.setAttribute("aria-pressed", "true");
-    applyFilters();
-  }
-  const nextSelection = selectionForIndex(events.length, index);
-  selectEvent(item, { block: nextSelection.following ? "end" : "center" });
-  setFollow(nextSelection.following);
-  if (nextSelection.following) {
-    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+  if (item) selectEvent(item, { scroll: false });
+  window.scrollTo({ top: scrollTop, behavior: "auto" });
+  if (following && index === events.length - 1) {
+    requestAnimationFrame(() => setFollow(true));
+  } else {
+    setFollow(false);
   }
 }
 
@@ -583,8 +575,8 @@ function setFollow(nextFollow) {
 
 renderFilterControls();
 minimap = installMinimap({
-  getEvents: allEvents,
-  selectIndex: selectOverviewIndex,
+  getEvents: visibleEvents,
+  navigate: navigateOverview,
 });
 searchInput.addEventListener("input", applyFilters);
 pauseButton.addEventListener("click", () => setFollow(!follow));
@@ -596,6 +588,9 @@ tape.addEventListener("click", (event) => {
   const nextSelection = selectionForIndex(events.length, events.indexOf(item));
   selectEvent(item, { scroll: false });
   setFollow(nextSelection.following);
+  if (nextSelection.following) {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+  }
 });
 jumpButton.addEventListener("click", () => jumpToBoundary("newest", true));
 document.addEventListener("keydown", (event) => {
@@ -632,8 +627,24 @@ window.addEventListener("wheel", (event) => {
   if (event.deltaY < 0) setFollow(false);
 }, { passive: false });
 window.addEventListener("scroll", () => {
-  const distanceFromLatest = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
-  if (follow && distanceFromLatest > 160) setFollow(false);
+  const events = visibleEvents();
+  const nextFollow = followAfterScroll({
+    following: follow,
+    previousScrollY,
+    scrollY: window.scrollY,
+    viewportHeight: window.innerHeight,
+    documentHeight: document.documentElement.scrollHeight,
+  });
+  previousScrollY = window.scrollY;
+  if (nextFollow && isTranscriptBottom(
+    window.scrollY,
+    window.innerHeight,
+    document.documentElement.scrollHeight,
+  )) {
+    const newest = events.at(-1);
+    if (newest && newest !== selectedEvent) selectEvent(newest, { scroll: false });
+  }
+  if (nextFollow !== follow) setFollow(nextFollow);
 }, { passive: true });
 
 const source = new EventSource("/events");

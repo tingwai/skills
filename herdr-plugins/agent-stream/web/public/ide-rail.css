@@ -26,7 +26,14 @@
   --body-font: "Avenir Next", Avenir, system-ui, sans-serif;
 }
 
-html { scroll-padding-top: 96px; }
+html {
+  scroll-padding-top: 96px;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar { display: none; width: 0; height: 0; }
+body { -ms-overflow-style: none; }
 
 body {
   color: var(--ide-text);
@@ -226,6 +233,11 @@ main { width: 100%; margin: 0; padding: 10px 10px 42vh; }
   height: 100%;
   cursor: ns-resize;
   touch-action: none;
+}
+
+.minimap canvas:focus-visible {
+  outline: 1px solid var(--ide-text);
+  outline-offset: -1px;
 }
 
 .minimap-viewport {

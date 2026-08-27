@@ -6,9 +6,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
-  minimapIndexForRatio,
   minimapBarWidths,
   minimapViewport,
+  eventIndexAtDocumentOffset,
+  installMinimap,
+  lensMapper,
   sampleMinimap,
 } from "../../../herdr-plugins/agent-stream/web/public/minimap.js";
 import {
@@ -18,6 +20,8 @@ import {
   shouldRenderAgentMarkdown,
 } from "../../../herdr-plugins/agent-stream/web/public/markdown-renderer.js";
 import {
+  followAfterScroll,
+  isTranscriptBottom,
   selectionAfterAppend,
   selectionForNavigation,
   selectionForSessionReset,
@@ -112,6 +116,8 @@ test("browser launcher serves the shared empty state plus history and live SSE",
     assert.match(page, /Nothing to display yet\./u);
     assert.match(page, /id="minimap"/u);
     assert.match(page, /id="minimap-canvas"/u);
+    assert.match(page, /role="scrollbar"/u);
+    assert.match(page, /tabindex="0"/u);
     assert.doesNotMatch(page, /view-switcher|view-select|waterfall|Theme test|theme-select|Terminal Ledger|Signal Index|Baseline/u);
     assert.equal((await fetch(`${details.url}ide-rail.css`)).status, 200);
     assert.equal((await fetch(`${details.url}minimap.js`)).status, 200);
@@ -175,6 +181,42 @@ test("browser navigation resumes follow at newest and preserves pause above it",
     selectedIndex: 0,
     following: true,
   });
+});
+
+test("true transcript bottom resumes live across every scroll path without tall-output false positives", () => {
+  assert.equal(isTranscriptBottom(1_499, 500, 2_000), true);
+  assert.equal(isTranscriptBottom(1_498.25, 500, 2_000), true,
+    "Subpixel layout within the two-pixel tolerance is bottom");
+  assert.equal(isTranscriptBottom(1_497.9, 500, 2_000), false);
+
+  const atBottom = {
+    following: false,
+    previousScrollY: 1_200,
+    scrollY: 1_499,
+    viewportHeight: 500,
+    documentHeight: 2_000,
+  };
+  assert.equal(followAfterScroll(atBottom), true,
+    "Wheel, touch, keyboard, or minimap scroll all resume from the same bottom geometry");
+  assert.equal(followAfterScroll({
+    ...atBottom,
+    following: true,
+    previousScrollY: 1_500,
+    scrollY: 1_490,
+  }), false, "Scrolling upward exits live immediately");
+  assert.equal(followAfterScroll({
+    following: false,
+    previousScrollY: 850,
+    scrollY: 900,
+    viewportHeight: 500,
+    documentHeight: 2_000,
+  }), false, "Being inside the newest tall output but materially above bottom remains history");
+
+  const resumed = selectionAfterAppend(4, 2, followAfterScroll(atBottom));
+  assert.deepEqual(resumed, { selectedIndex: 3, following: true },
+    "A live append advances the synchronized newest selection");
+  const paused = selectionAfterAppend(4, 2, false);
+  assert.deepEqual(paused, { selectedIndex: 2, following: false });
 });
 
 test("assistant Markdown parsing is safe, scoped, and preserves plain text fallback", () => {
@@ -253,6 +295,8 @@ test("IDE Activity Rail is the sole compact skin in narrow panes", () => {
   assert.match(ideCss, /grid-template-columns: minmax\(0, 1fr\) 18px/u);
   assert.match(ideCss, /\.minimap canvas \{\s*width: 16px;/u);
   assert.match(ideCss, /grid-template-columns: minmax\(0, 1fr\) 16px/u);
+  assert.match(ideCss, /scrollbar-width: none/u);
+  assert.match(ideCss, /html::-webkit-scrollbar/u);
   assert.match(markdownCss, /\.markdown-inline-code/u);
   assert.match(markdownCss, /font: \.9em\/1\.35 var\(--utility-font\)/u);
   assert.match(markdownCss, /\.markdown \.markdown-code-block/u);
@@ -269,12 +313,14 @@ test("minimap sampling stays bounded and maps click or drag to transcript select
   assert.deepEqual(sampleMinimap(events, 180), bins, "Bounded aggregation must be deterministic");
   assert.equal(bins[0].startIndex, 0);
   assert.equal(bins.at(-1).endIndex, 9_999);
-  assert.equal(minimapIndexForRatio(events.length, 0), 0);
-  assert.equal(minimapIndexForRatio(events.length, .5), 5_000);
-  assert.deepEqual(minimapViewport(1_500, 500, 2_000), { topRatio: 1, heightRatio: .25 });
-  assert.deepEqual(minimapViewport(250, 500, 1_500), { topRatio: .25, heightRatio: 1 / 3 });
-  const newestIndex = minimapIndexForRatio(events.length, 1);
-  assert.equal(newestIndex, 9_999);
+  assert.deepEqual(minimapViewport(1_500, 500, 2_000), {
+    topRatio: 1,
+    heightRatio: .25,
+  });
+  const partialViewport = minimapViewport(250, 500, 1_500);
+  assert.equal(partialViewport.topRatio, .25);
+  assert.equal(partialViewport.heightRatio, 1 / 3);
+  const newestIndex = events.length - 1;
   assert.equal(selectionForNavigation(events.length, newestIndex - 1, 1).following, true);
   assert.equal(selectionForNavigation(events.length, newestIndex, -1).following, false);
 });
@@ -310,7 +356,198 @@ test("minimap mark width honestly scales content length in a narrow rail", () =>
   ], 1);
   assert.equal(aggregate[0].count, 3);
   assert.equal(aggregate[0].aggregateLength, 100, "Aggregated bins use the robust median length");
-  assert.equal(minimapIndexForRatio(3, 1), 2, "Bar sizing does not affect pointer hit testing");
+});
+
+test("Focus Lens preserves measured geometry and exact partial-message position", () => {
+  const geometry = [
+    { kind: "user", contentLength: 20, top: 100, height: 180 },
+    { kind: "command", contentLength: 2_000, top: 280, height: 1_400 },
+    { kind: "agent", contentLength: 200, top: 1_680, height: 220 },
+  ];
+  const bins = sampleMinimap(geometry);
+  assert.deepEqual(bins.map(({ top, bottom }) => ({ top, bottom })), [
+    { top: 100, bottom: 280 },
+    { top: 280, bottom: 1_680 },
+    { top: 1_680, bottom: 1_900 },
+  ]);
+  const widths = minimapBarWidths(bins, 12, 2);
+  assert.ok(widths[1] > widths[2] && widths[2] > widths[0]);
+  assert.equal(
+    eventIndexAtDocumentOffset(geometry, 1_000),
+    1,
+    "Halfway scroll remains within the tall command instead of snapping to an event boundary",
+  );
+  assert.equal(eventIndexAtDocumentOffset(geometry, 1_750), 2);
+
+  const lens = lensMapper(.45, .2);
+  for (const ratio of [0, .05, .2, .45, .7, .95, 1]) {
+    assert.ok(Math.abs(lens.inverse(lens.forward(ratio)) - ratio) < 1e-6);
+  }
+
+  const longGeometry = Array.from({ length: 10_000 }, (_, index) => ({
+    kind: index % 2 ? "agent" : "command",
+    contentLength: index * 3,
+    top: index * 20,
+    height: index % 7 === 0 ? 1_000 : 20,
+    scrollTop: index * 20,
+  }));
+  const longBins = sampleMinimap(longGeometry, 180);
+  assert.equal(longBins.length, 180);
+  assert.equal(longBins[0].top, 0);
+  assert.ok(longBins.every((bin) => bin.bottom >= bin.top));
+  assert.deepEqual(sampleMinimap(longGeometry, 180), longBins,
+    "Resize redraws reuse deterministic bounded geometry");
+});
+
+test("Focus Lens renders, redraws, and maps tall-output navigation to true-bottom live state", () => {
+  const listeners = new Map();
+  const context = {
+    setTransform() {}, clearRect() {}, fillRect() {},
+    set fillStyle(value) {}, set globalAlpha(value) {},
+  };
+  const canvas = {
+    width: 0,
+    height: 0,
+    style: {},
+    attributes: new Map(),
+    getBoundingClientRect: () => ({ top: 0, width: 16, height: 320 }),
+    getContext: () => context,
+    setAttribute(name, value) { this.attributes.set(name, value); },
+    addEventListener(name, listener) { listeners.set(`canvas:${name}`, listener); },
+    setPointerCapture() {},
+  };
+  const viewport = { style: {} };
+  const tape = {};
+  const events = [
+    { dataset: { kind: "user", contentLength: "20" }, getBoundingClientRect: () => ({ top: -200, height: 120 }) },
+    { dataset: { kind: "command", contentLength: "200" }, getBoundingClientRect: () => ({ top: -80, height: 120 }) },
+    { dataset: { kind: "agent", contentLength: "2000" }, getBoundingClientRect: () => ({ top: 40, height: 1_760 }) },
+  ];
+  const documentValue = {
+    documentElement: { scrollHeight: 2_000 },
+    querySelector(selector) {
+      return { "#minimap-canvas": canvas, "#minimap-viewport": viewport, "#tape": tape }[selector] ?? null;
+    },
+    addEventListener(name, listener) { listeners.set(`document:${name}`, listener); },
+  };
+  const windowValue = {
+    innerHeight: 500,
+    scrollY: 200,
+    devicePixelRatio: 2,
+    getComputedStyle: () => ({ getPropertyValue: () => "" }),
+    requestAnimationFrame(callback) { callback(); },
+    addEventListener(name, listener) { listeners.set(`window:${name}`, listener); },
+    ResizeObserver: class { observe() {} },
+  };
+  const navigations = [];
+  installMinimap({
+    documentValue,
+    windowValue,
+    getEvents: () => events,
+    navigate(value) { navigations.push(value); },
+  });
+  listeners.get("canvas:pointerdown")({ clientY: 160, pointerId: 1 });
+  assert.equal(navigations.at(-1).following, false,
+    "Focus Lens must not resume live in the middle of a tall newest output");
+  listeners.get("canvas:pointerdown")({ clientY: 320, pointerId: 1 });
+  assert.equal(navigations.at(-1).following, true,
+    "Focus Lens must resume live at the true transcript bottom");
+  windowValue.scrollY = 900;
+  assert.doesNotThrow(() => listeners.get("window:scroll")());
+  assert.match(viewport.style.top, /%$/u);
+  assert.match(viewport.style.height, /%$/u);
+});
+
+test("manual launcher immediately attaches an existing exact-surface session with inactive registry flags", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cmux-web-manual-existing-test-"));
+  const exactTranscript = path.join(directory, "exact.jsonl");
+  const staleTranscript = path.join(directory, "stale.jsonl");
+  const otherTranscript = path.join(directory, "other.jsonl");
+  const sessionStatePath = path.join(directory, "sessions.json");
+  const cmuxEventsPath = path.join(directory, "events.jsonl");
+  const fakeCmux = path.join(directory, "cmux");
+  fs.writeFileSync(exactTranscript, `${JSON.stringify({
+    type: "event_msg",
+    payload: { type: "agent_message", message: "existing-exact-history-marker" },
+  })}\n`);
+  fs.writeFileSync(staleTranscript, `${JSON.stringify({
+    type: "event_msg",
+    payload: { type: "agent_message", message: "stale-same-surface-marker" },
+  })}\n`);
+  fs.writeFileSync(otherTranscript, `${JSON.stringify({
+    type: "event_msg",
+    payload: { type: "agent_message", message: "cross-surface-marker" },
+  })}\n`);
+  fs.writeFileSync(sessionStatePath, JSON.stringify({ sessions: [
+    {
+      surface_id: "source-existing",
+      active_for_surface: false,
+      active_surface_session_id: null,
+      session_id: "session-stale",
+      started_at: "2026-08-27T01:00:00.000Z",
+      updated_at_unix: 999,
+      codex_transcript_path: staleTranscript,
+    },
+    {
+      surface_id: "source-existing",
+      active_for_surface: false,
+      active_surface_session_id: null,
+      session_id: "session-exact",
+      started_at: "2026-08-27T02:00:00.000Z",
+      updated_at_unix: 100,
+      codex_transcript_path: exactTranscript,
+    },
+    {
+      surface_id: "other-source",
+      active_for_surface: true,
+      session_id: "session-other",
+      codex_transcript_path: otherTranscript,
+    },
+  ] }));
+  fs.writeFileSync(cmuxEventsPath, [
+    JSON.stringify({
+      name: "agent.hook.UserPromptSubmit",
+      surface_id: "other-source",
+      payload: { session_id: "codex-session-other" },
+    }),
+    JSON.stringify({
+      name: "agent.hook.UserPromptSubmit",
+      surface_id: "source-existing",
+      payload: { session_id: "codex-session-exact" },
+    }),
+  ].join("\n") + "\n");
+  fs.writeFileSync(fakeCmux, `#!/usr/bin/env node
+const fs = require("node:fs");
+process.stdout.write(fs.readFileSync(process.env.CMUX_TEST_SESSION_STATE, "utf8") + "\\n");
+`, { mode: 0o755 });
+  const result = spawnSync(process.execPath, [launcher, "--no-open"], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CMUX_BIN_PATH: fakeCmux,
+      CMUX_SURFACE_ID: "source-existing",
+      CMUX_WORKSPACE_ID: "workspace-existing",
+      CMUX_EVENTS_PATH: cmuxEventsPath,
+      CMUX_TEST_SESSION_STATE: sessionStatePath,
+      AGENT_STREAM_WEB_STATE_DIRECTORY: directory,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const details = JSON.parse(result.stdout);
+  const controller = new AbortController();
+  try {
+    assert.equal(details.sessionId, "session-exact");
+    assert.equal(details.transcriptPath, exactTranscript);
+    await waitForHealth(details.url);
+    const response = await fetch(`${details.url}events`, { signal: controller.signal });
+    const history = await readUntil(response.body.getReader(), "existing-exact-history-marker");
+    assert.match(history, /existing-exact-history-marker/u);
+    assert.doesNotMatch(history, /stale-same-surface-marker|cross-surface-marker/u);
+  } finally {
+    controller.abort();
+    stopServer(details.serverPid);
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("empty server attaches only to later authoritative metadata for its source surface", async () => {
@@ -701,6 +938,82 @@ fi
     assert.equal((fs.readFileSync(logPath, "utf8").match(/new-pane --type browser/gu) ?? []).length, 1);
   } finally {
     stopServer(details.serverPid);
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("manual invocation upgrades an existing empty pane to the current conversation without a new prompt", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "cmux-web-upgrade-test-"));
+  const transcriptPath = path.join(directory, "existing.jsonl");
+  const sessionsPath = path.join(directory, "sessions.json");
+  const eventsPath = path.join(directory, "events.jsonl");
+  const logPath = path.join(directory, "cmux.log");
+  const fakeCmux = path.join(directory, "cmux");
+  fs.writeFileSync(transcriptPath, `${JSON.stringify({
+    type: "event_msg",
+    payload: { type: "agent_message", message: "manual-upgrade-history-marker" },
+  })}\n`);
+  fs.writeFileSync(sessionsPath, JSON.stringify({ sessions: [] }));
+  fs.writeFileSync(eventsPath, "");
+  fs.writeFileSync(fakeCmux, `#!/bin/sh
+printf '%s\\n' "$*" >> "$CMUX_TEST_LOG"
+if [ "$1" = sessions ]; then
+  cat "$CMUX_TEST_SESSIONS"
+elif [ "$1" = --json ]; then
+  printf '%s\\n' '{"surface_id":"browser-upgrade"}'
+elif [ "$1" = browser ]; then
+  printf '%s\\n' 'http://127.0.0.1:4319/'
+fi
+`, { mode: 0o755 });
+  const environment = {
+    ...process.env,
+    CMUX_BIN_PATH: fakeCmux,
+    CMUX_SURFACE_ID: "source-upgrade",
+    CMUX_WORKSPACE_ID: "workspace-upgrade",
+    CMUX_EVENTS_PATH: eventsPath,
+    CMUX_TEST_LOG: logPath,
+    CMUX_TEST_SESSIONS: sessionsPath,
+    AGENT_STREAM_WEB_STATE_DIRECTORY: directory,
+  };
+  const automatic = spawnSync(process.execPath, [launcher, "--auto"], { encoding: "utf8", env: environment });
+  assert.equal(automatic.status, 0, automatic.stderr);
+  const emptyDetails = JSON.parse(automatic.stdout);
+  try {
+    assert.equal(emptyDetails.transcriptPath, null);
+    fs.writeFileSync(sessionsPath, JSON.stringify({ sessions: [{
+      surface_id: "source-upgrade",
+      active_for_surface: false,
+      active_surface_session_id: null,
+      session_id: "session-upgrade",
+      started_at: "2026-08-27T02:00:00.000Z",
+      codex_transcript_path: transcriptPath,
+    }] }));
+    fs.writeFileSync(eventsPath, `${JSON.stringify({
+      name: "agent.hook.UserPromptSubmit",
+      surface_id: "source-upgrade",
+      payload: { session_id: "codex-session-upgrade" },
+    })}\n`);
+
+    const manual = spawnSync(process.execPath, [launcher], { encoding: "utf8", env: environment });
+    assert.equal(manual.status, 0, manual.stderr);
+    const attached = JSON.parse(manual.stdout);
+    assert.equal(attached.status, "restored");
+    assert.equal(attached.viewerSurfaceId, emptyDetails.viewerSurfaceId);
+    assert.notEqual(attached.serverPid, emptyDetails.serverPid);
+    assert.equal(attached.sessionId, "session-upgrade");
+    assert.equal(attached.transcriptPath, transcriptPath);
+    await waitForHealth(attached.url);
+    const controller = new AbortController();
+    const response = await fetch(`${attached.url}events`, { signal: controller.signal });
+    const history = await readUntil(response.body.getReader(), "manual-upgrade-history-marker");
+    controller.abort();
+    assert.match(history, /manual-upgrade-history-marker/u);
+    const commands = fs.readFileSync(logPath, "utf8");
+    assert.equal((commands.match(/new-pane --type browser/gu) ?? []).length, 1);
+    assert.match(commands, /browser --surface browser-upgrade navigate/u);
+    stopServer(attached.serverPid);
+  } finally {
+    stopServer(emptyDetails.serverPid);
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });

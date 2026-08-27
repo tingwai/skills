@@ -4,6 +4,11 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  latestSurfaceHookSessionId,
+  normalizedCodexSessionId,
+  selectSurfaceSession,
+} from "./cmux-session.mjs";
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.join(moduleDirectory, "public");
@@ -112,7 +117,6 @@ const staticFiles = new Map([
 const clients = new Set();
 const history = [];
 const serverStartedAt = Date.now();
-const initialSessionNotBefore = serverStartedAt - 2_000;
 let position = 0;
 let partialLine = "";
 let loading = true;
@@ -120,7 +124,7 @@ let lastClientDisconnectedAt = null;
 let currentSessionId = options.sessionId ?? null;
 let cmuxEventPosition = 0;
 let cmuxEventPartialLine = "";
-let pendingCmuxHookSessionId = null;
+let pendingCmuxHookSessionId = latestSurfaceHookSessionId(options.cmuxEvents, options.cmuxSurface);
 try { cmuxEventPosition = fs.statSync(options.cmuxEvents).size; } catch { /* The log is optional. */ }
 
 function browserRecord(record) {
@@ -260,32 +264,12 @@ function sessionDetails(session, fallbackSessionId = null) {
   };
 }
 
-function normalizedCodexSessionId(sessionId) {
-  return typeof sessionId === "string" && sessionId.startsWith("codex-")
-    ? sessionId.slice("codex-".length)
-    : sessionId;
-}
-
 function activeCmuxSession() {
   if (!options.cmuxSurface) return null;
   const sessions = cmuxSessions(["--surface", options.cmuxSurface]);
-  const exactSessions = sessions.filter((session) =>
-    (session.surface_id === options.cmuxSurface || session.surfaceId === options.cmuxSurface)
-    && (session.codex_transcript_path || session.transcript_path));
-  const declaredActiveId = exactSessions.find((session) => session.active_surface_session_id)
-    ?.active_surface_session_id;
-  const active = exactSessions.find((session) => session.active_for_surface)
-    ?? exactSessions.find((session) => session.session_id === declaredActiveId);
-  if (active) return sessionDetails(active, declaredActiveId);
-  if (transcriptPath) return null;
-  const newlyRegistered = exactSessions
-    .filter((session) => {
-      const startedAt = Date.parse(session.started_at ?? session.startedAt ?? "");
-      return Number.isFinite(startedAt) && startedAt >= initialSessionNotBefore;
-    })
-    .sort((left, right) =>
-      Number(right.updated_at_unix ?? 0) - Number(left.updated_at_unix ?? 0))[0];
-  return newlyRegistered ? sessionDetails(newlyRegistered) : null;
+  const active = selectSurfaceSession(sessions, options.cmuxSurface, null, false);
+  if (active) return sessionDetails(active);
+  return null;
 }
 
 function cmuxSessionForHook(sessionId) {

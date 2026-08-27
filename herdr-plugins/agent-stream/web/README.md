@@ -16,7 +16,8 @@ The UI includes:
 - command status, exit-code, and duration badges
 - shortened home paths and shell-style command rendering
 - searchable, filterable events with follow/pause controls
-- a narrow, bounded whole-session minimap whose mark widths encode event text length
+- a narrow, bounded whole-session minimap whose horizontal mark widths encode event text length
+- a continuous minimap viewport indicator driven by measured transcript geometry
 - click selection followed by `j`/`k` navigation between visible events
 - `Shift`+wheel navigation with a Mac trackpad-friendly time throttle, while
   ordinary wheel scrolling remains native

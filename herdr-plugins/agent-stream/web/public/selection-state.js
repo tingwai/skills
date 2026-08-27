@@ -25,3 +25,20 @@ export function selectionAfterAppend(count, selectedIndex, following) {
 export function selectionForSessionReset() {
   return { selectedIndex: -1, following: true };
 }
+
+export function isTranscriptBottom(scrollY, viewportHeight, documentHeight, tolerance = 2) {
+  return documentHeight - scrollY - viewportHeight <= tolerance;
+}
+
+export function followAfterScroll({
+  following,
+  previousScrollY,
+  scrollY,
+  viewportHeight,
+  documentHeight,
+}, tolerance = 2) {
+  if (isTranscriptBottom(scrollY, viewportHeight, documentHeight, tolerance)) return true;
+  if (following && scrollY < previousScrollY - tolerance) return false;
+  if (following && documentHeight - scrollY - viewportHeight > 160) return false;
+  return following;
+}

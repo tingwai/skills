@@ -6,6 +6,10 @@ import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import {
+  latestSurfaceHookSessionId,
+  selectSurfaceSession,
+} from "../../../herdr-plugins/agent-stream/web/cmux-session.mjs";
 
 const argumentsList = process.argv.slice(2);
 
@@ -20,6 +24,8 @@ const explicitTranscript = optionValue("--transcript");
 const explicitPort = Number.parseInt(optionValue("--port"), 10);
 const sourceSurfaceId = process.env.CMUX_SURFACE_ID ?? "";
 const workspaceId = process.env.CMUX_WORKSPACE_ID ?? "";
+const cmuxEventsPath = process.env.CMUX_EVENTS_PATH
+  ?? path.join(os.homedir(), ".cmuxterm", "events.jsonl");
 const cmux = resolveCmuxBinary();
 const webServer = path.resolve(import.meta.dirname, "../../../herdr-plugins/agent-stream/web/server.mjs");
 const stateDirectory = process.env.AGENT_STREAM_WEB_STATE_DIRECTORY
@@ -89,11 +95,8 @@ function resolveSession() {
   if (!sourceSurfaceId) fail("Run this viewer from the Codex terminal in Cmux, or pass --transcript PATH.");
   if (automatic) return null;
   const candidates = transcriptCandidates();
-  const declaredActiveId = candidates.find((session) => session.active_surface_session_id)
-    ?.active_surface_session_id;
-  const selected = candidates.find((session) => session.active_for_surface)
-    ?? candidates.find((session) =>
-      (session.session_id ?? session.sessionId) === declaredActiveId);
+  const hookSessionId = latestSurfaceHookSessionId(cmuxEventsPath, sourceSurfaceId);
+  const selected = selectSurfaceSession(candidates, sourceSurfaceId, hookSessionId);
   return selected ? {
     transcriptPath: selected.codex_transcript_path ?? selected.transcript_path,
     sessionId: selected.session_id ?? selected.sessionId ?? null,
@@ -200,7 +203,11 @@ async function startServer(session) {
   if (session?.transcriptPath) serverArguments.push("--transcript", session.transcriptPath);
   if (!noOpen) serverArguments.push("--exit-idle", "30");
   if (sourceSurfaceId) {
-    serverArguments.push("--cmux-surface", sourceSurfaceId, "--cmux-bin", cmux);
+    serverArguments.push(
+      "--cmux-surface", sourceSurfaceId,
+      "--cmux-bin", cmux,
+      "--cmux-events", cmuxEventsPath,
+    );
     if (session?.sessionId) serverArguments.push("--session-id", session.sessionId);
   }
   const child = spawn(process.execPath, serverArguments, {
@@ -282,9 +289,11 @@ async function main() {
   try {
     const previous = readState();
     const previousSurfaceExists = browserSurfaceExists(previous?.viewerSurfaceId);
+    const existingServerMatches = !session?.transcriptPath
+      || previous?.transcriptPath === session.transcriptPath;
     if (processIsAlive(previous?.serverPid)
         && previousSurfaceExists
-        && (!explicitTranscript || previous.transcriptPath === session?.transcriptPath)) {
+        && existingServerMatches) {
       writeResult({ ...previous, status: "already_open" });
       return;
     }

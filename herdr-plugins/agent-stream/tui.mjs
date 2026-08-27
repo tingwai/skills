@@ -2,10 +2,19 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  CMUX_CLOSE_EXIT_CODE,
+  isDedicatedCmuxViewer,
+  requestCmuxViewerClose,
+  shouldCloseCmuxViewer,
+} from "./viewer-lifecycle.mjs";
+import { VIEWER_HELP, enterEmptyState, renderEmptyState } from "./viewer-rendering.mjs";
 
 let transcriptPath = process.env.CODEX_TRANSCRIPT_PATH ?? "";
 let sessionId = process.env.CODEX_SESSION_ID ?? "";
 const sourcePaneId = process.env.CODEX_SOURCE_PANE_ID;
+const viewerSurfaceId = process.env.CMUX_AGENT_STREAM_VIEWER_SURFACE_ID;
+const runtime = process.env.AGENT_STREAM_RUNTIME ?? "herdr";
 const statePath = process.env.AGENT_STREAM_STATE_PATH;
 const historyLimit = positiveInteger(process.env.AGENT_STREAM_TUI_HISTORY, 250);
 const eventLimit = positiveInteger(process.env.AGENT_STREAM_TUI_MAX_EVENTS, 500);
@@ -45,6 +54,9 @@ function persistViewerState(currentTranscriptPath, currentSessionId) {
   if (!statePath) return;
   try {
     fs.writeFileSync(statePath, `${JSON.stringify({
+      runtime,
+      sourceSurfaceId: runtime === "cmux" ? sourcePaneId : undefined,
+      viewerSurfaceId,
       transcriptPath: currentTranscriptPath,
       sessionId: currentSessionId,
       pid: process.pid,
@@ -59,18 +71,23 @@ function removeOwnedState() {
   if (!statePath) return;
   try {
     const viewerState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    if (viewerState.pid === process.pid) fs.unlinkSync(statePath);
+    if (viewerState.pid !== process.pid) return;
+    if (runtime === "cmux") {
+      fs.writeFileSync(statePath, `${JSON.stringify({
+        ...viewerState,
+        pid: null,
+        closedAt: Date.now(),
+      })}\n`);
+    } else {
+      fs.unlinkSync(statePath);
+    }
   } catch {
     // A newer viewer may own the state file.
   }
 }
 
 function renderWaitingForSession() {
-  const width = Math.max(20, (process.stdout.columns ?? 80) - 1);
-  const message = " Nothing to display yet.".slice(0, width).padEnd(width);
-  process.stdout.write(
-    `${CSI}?1049h${CSI}?25l${CSI}H${CSI}2J${CSI}2;37m${message}${RESET}`,
-  );
+  process.stdout.write(enterEmptyState(process.stdout.columns, process.stdout.rows));
 }
 
 async function waitForTranscript() {
@@ -618,8 +635,12 @@ function render() {
   state.renderedDocument = buildDocument(width);
   state.scrollOffset = Math.max(0, Math.min(Math.max(0, state.renderedDocument.length - viewportHeight), state.scrollOffset));
   state.visibleRows = new Map();
+  if (!state.events.length) {
+    process.stdout.write(renderEmptyState(process.stdout.columns, process.stdout.rows));
+    return;
+  }
   const displayedSessionId = sessionId || path.basename(transcriptPath);
-  const help = clip(" click selects · wheel scrolls chat · Shift+wheel message · j/k · G live", width).padEnd(width);
+  const help = clip(VIEWER_HELP, width).padEnd(width);
   const output = [`${CSI}H${CSI}2J${CSI}2;37m${help}${RESET}`];
   for (let offset = 0; offset < viewportHeight; offset += 1) {
     const documentIndex = state.scrollOffset + offset;
@@ -628,20 +649,16 @@ function render() {
     if (entry) state.visibleRows.set(terminalRow, entry);
     output.push(entry ? paint(entry, width) : " ".repeat(width));
   }
-  if (state.events.length) {
-    const statusLabel = state.following ? "LIVE" : "PAUSED";
-    const stateSegment = state.following ? ` ${statusLabel} ` : statusLabel;
-    const prefix = ` ${state.selectedIndex + 1}/${state.events.length} · `;
-    const status = clip(`${prefix}${stateSegment} · session ${displayedSessionId} `, width).padEnd(width);
-    const beforeState = status.slice(0, prefix.length);
-    const renderedState = status.slice(prefix.length, prefix.length + stateSegment.length);
-    const afterState = status.slice(prefix.length + stateSegment.length);
-    const stateStyle = state.following ? `${CSI}1;38;2;0;0;0;48;2;255;255;255m` : "";
-    const restoreStyle = state.following ? `${RESET}${CSI}38;5;246m` : "";
-    output.push(`${CSI}38;5;246m${beforeState}${stateStyle}${renderedState}${restoreStyle}${afterState}${RESET}`);
-  } else {
-    output.push(`${CSI}38;5;246m${clip(" Waiting for renderable transcript events… ", width).padEnd(width)}${RESET}`);
-  }
+  const statusLabel = state.following ? "LIVE" : "PAUSED";
+  const stateSegment = state.following ? ` ${statusLabel} ` : statusLabel;
+  const prefix = ` ${state.selectedIndex + 1}/${state.events.length} · `;
+  const status = clip(`${prefix}${stateSegment} · session ${displayedSessionId} `, width).padEnd(width);
+  const beforeState = status.slice(0, prefix.length);
+  const renderedState = status.slice(prefix.length, prefix.length + stateSegment.length);
+  const afterState = status.slice(prefix.length + stateSegment.length);
+  const stateStyle = state.following ? `${CSI}1;38;2;0;0;0;48;2;255;255;255m` : "";
+  const restoreStyle = state.following ? `${RESET}${CSI}38;5;246m` : "";
+  output.push(`${CSI}38;5;246m${beforeState}${stateStyle}${renderedState}${restoreStyle}${afterState}${RESET}`);
   process.stdout.write(output.join("\n"));
 }
 
@@ -676,7 +693,8 @@ function handleInput(data) {
     keyboard = keyboard.replace(match[0], "");
   }
   if (!keyboard) return;
-  if (keyboard === "q" || keyboard === "\u0003") cleanUpAndExit();
+  if (keyboard === "q") cleanUpAndExit(shouldCloseCmuxViewer(keyboard));
+  else if (keyboard === "\u0003") cleanUpAndExit();
   else if (keyboard === "k" || keyboard === "\u001b[A") selectRelative(-1);
   else if (keyboard === "j" || keyboard === "\u001b[B") selectRelative(1);
   else if (keyboard === "G") {
@@ -743,18 +761,22 @@ function writeState() {
   persistViewerState(transcriptPath, sessionId);
 }
 
-function cleanUp() {
+function cleanUp(restoreScreen = true) {
   if (state.cleanedUp) return;
   state.cleanedUp = true;
   if (state.interval) clearInterval(state.interval);
   process.stdin.off("data", handleInput);
   if (process.stdin.isTTY) process.stdin.setRawMode(false);
-  process.stdout.write(`${CSI}?1000l${CSI}?1006l${CSI}?25h${CSI}?1049l`);
+  const restoreSequence = restoreScreen ? `${CSI}?25h${CSI}?1049l` : "";
+  process.stdout.write(`${CSI}?1000l${CSI}?1006l${restoreSequence}`);
   removeOwnedState();
 }
 
-function cleanUpAndExit() {
-  cleanUp();
+function cleanUpAndExit(closeCmuxViewer = false) {
+  const shouldClose = closeCmuxViewer && isDedicatedCmuxViewer();
+  cleanUp(!shouldClose);
+  if (shouldClose && requestCmuxViewerClose()) process.exit(CMUX_CLOSE_EXIT_CODE);
+  if (shouldClose) process.stdout.write(`${CSI}?25h${CSI}?1049l`);
   process.exit(0);
 }
 
@@ -765,9 +787,9 @@ process.stdin.setRawMode(true);
 process.stdin.resume();
 process.stdin.on("data", handleInput);
 process.stdout.on("resize", render);
-process.on("SIGINT", cleanUpAndExit);
-process.on("SIGTERM", cleanUpAndExit);
-process.on("exit", cleanUp);
+process.on("SIGINT", () => cleanUpAndExit());
+process.on("SIGTERM", () => cleanUpAndExit());
+process.on("exit", () => cleanUp());
 scrollToSelected("bottom");
 render();
 state.interval = setInterval(readNewRecords, 150);

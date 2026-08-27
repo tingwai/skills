@@ -1,4 +1,4 @@
 interface:
   display_name: "Open Codex Stream"
-  short_description: "Open the Herdr Codex transcript viewer"
+  short_description: "Open the Cmux or Herdr Codex transcript viewer"
   default_prompt: "Use $open-codex-stream to open the Codex stream viewer to the right of this pane."

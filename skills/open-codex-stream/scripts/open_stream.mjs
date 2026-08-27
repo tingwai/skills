@@ -3,6 +3,15 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
+if (process.env.HERDR_ENV !== "1" && process.env.CMUX_SURFACE_ID) {
+  await import("./open_stream_cmux.mjs");
+  process.exit(process.exitCode ?? 0);
+}
+if (process.env.HERDR_ENV !== "1") {
+  process.stderr.write("This skill must run inside a Cmux or Herdr-managed terminal.\n");
+  process.exit(1);
+}
+
 const preferredPluginId = "tingwai.agent-stream";
 const legacyPluginId = "local.agent-stream";
 const supportedPluginIds = [preferredPluginId, legacyPluginId];
@@ -79,10 +88,6 @@ function resolvePlugin(plugins) {
 function writeResult(result, exitCode = 0) {
   process.stdout.write(`${JSON.stringify(result)}\n`);
   process.exit(exitCode);
-}
-
-if (process.env.HERDR_ENV !== "1") {
-  fail("This skill must run inside a Herdr-managed pane (HERDR_ENV=1)");
 }
 
 const sourcePane = herdrJson(["pane", "current", "--current"])?.result?.pane;
